@@ -29,7 +29,7 @@ import {
   ResponsiveContainer, Cell 
 } from 'recharts';
 import { 
-  Calendar, DollarSign, TrendingUp, TrendingDown, CreditCard, PiggyBank,
+  Calendar, CalendarDays, DollarSign, TrendingUp, TrendingDown, CreditCard, PiggyBank,
   User, LogOut, Plus, Edit2, Trash2, Moon, Sun, Brain, Loader2,
   AlertCircle, CheckCircle, XCircle, ChevronDown, Wallet, Target,
   Sparkles, Home, BarChart3, Receipt, X, Save, Chrome
@@ -696,16 +696,69 @@ function App() {
   // Calculate financial metrics
   const financialMetrics = useMemo(() => {
     const netWorth = accounts.reduce((sum, acc) => sum + (acc.balance || 0), 0);
-    const currentMonth = new Date().toISOString().substring(0, 7);
+    const now = new Date();
+    const currentMonth = now.toISOString().substring(0, 7);
+    const currentDate = now.toISOString().substring(0, 10);
+    
+    // Get start of current week (Monday)
+    const startOfWeek = new Date(now);
+    const day = startOfWeek.getDay();
+    const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
+    startOfWeek.setDate(diff);
+    startOfWeek.setHours(0, 0, 0, 0);
+    
     const monthlyIncome = transactions
-      .filter(t => t.type === 'income' && t.date?.startsWith(currentMonth))
-      .reduce((sum, t) => sum + t.amount, 0);
+      .filter(t => t.type === 'income' && t.date && t.date.startsWith(currentMonth))
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+    
     const monthlyExpenses = transactions
-      .filter(t => t.type === 'expense' && t.date?.startsWith(currentMonth))
-      .reduce((sum, t) => sum + t.amount, 0);
-    const savingsRate = monthlyIncome > 0 ? ((monthlyIncome - monthlyExpenses) / monthlyIncome * 100) : 0;
+      .filter(t => t.type === 'expense' && t.date && t.date.startsWith(currentMonth))
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+    
+    // Daily expenses (today)
+    const dailyExpenses = transactions
+      .filter(t => t.type === 'expense' && t.date === currentDate)
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+    
+    // Weekly expenses (current week)
+    const weeklyExpenses = transactions
+      .filter(t => {
+        if (t.type !== 'expense' || !t.date) return false;
+        const transactionDate = new Date(t.date);
+        return transactionDate >= startOfWeek && transactionDate <= now;
+      })
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+    
+    // Calculate average daily expense (last 30 days)
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const last30DaysExpenses = transactions
+      .filter(t => {
+        if (t.type !== 'expense' || !t.date) return false;
+        const transactionDate = new Date(t.date);
+        return transactionDate >= thirtyDaysAgo && transactionDate <= now;
+      })
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+    const avgDailyExpense = last30DaysExpenses / 30;
+    
+    // Calculate savings rate properly
+    let savingsRate = 0;
+    if (monthlyIncome > 0) {
+      const monthlySavings = monthlyIncome - monthlyExpenses;
+      savingsRate = (monthlySavings / monthlyIncome) * 100;
+      // Ensure savings rate is between -100 and 100
+      savingsRate = Math.max(-100, Math.min(100, savingsRate));
+    }
 
-    return { netWorth, monthlyIncome, monthlyExpenses, savingsRate };
+    return { 
+      netWorth, 
+      monthlyIncome, 
+      monthlyExpenses,
+      dailyExpenses,
+      weeklyExpenses,
+      avgDailyExpense,
+      savingsRate: isNaN(savingsRate) ? 0 : savingsRate 
+    };
   }, [accounts, transactions]);
 
   // Prepare chart data
@@ -727,27 +780,38 @@ function App() {
   const monthlySpendingData = useMemo(() => {
     const data = {};
     const last12Months = [];
+    const monthNames = [];
     const now = new Date();
 
+    // Generate last 12 months
     for (let i = 11; i >= 0; i--) {
       const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthKey = date.toISOString().substring(0, 7);
+      const monthName = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
       last12Months.push(monthKey);
-      data[monthKey] = 0;
+      monthNames.push(monthName);
+      data[monthKey] = { income: 0, expense: 0 };
     }
 
-    transactions
-      .filter(t => t.type === 'expense')
-      .forEach(t => {
-        const monthKey = t.date?.substring(0, 7);
-        if (data.hasOwnProperty(monthKey)) {
-          data[monthKey] += t.amount;
+    // Aggregate transactions by month
+    transactions.forEach(t => {
+      if (!t.date || !t.amount) return;
+      const monthKey = t.date.substring(0, 7);
+      if (data.hasOwnProperty(monthKey)) {
+        if (t.type === 'expense') {
+          data[monthKey].expense += t.amount;
+        } else if (t.type === 'income') {
+          data[monthKey].income += t.amount;
         }
-      });
+      }
+    });
 
-    return last12Months.map(month => ({
-      month: new Date(month + '-01').toLocaleDateString('en-US', { month: 'short' }),
-      amount: parseFloat(data[month].toFixed(2))
+    // Return formatted data for chart
+    return last12Months.map((month, index) => ({
+      month: monthNames[index],
+      expense: parseFloat(data[month].expense.toFixed(2)),
+      income: parseFloat(data[month].income.toFixed(2)),
+      net: parseFloat((data[month].income - data[month].expense).toFixed(2))
     }));
   }, [transactions]);
 
@@ -1086,53 +1150,155 @@ function App() {
           {/* Overview Tab */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
-              {/* Metrics Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 shadow-sm">
+              {/* Primary Metrics - Net Worth and Savings */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-gradient-to-br from-purple-500 to-purple-600 dark:from-purple-600 dark:to-purple-700 rounded-xl p-6 shadow-lg text-white">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
-                      <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">Net Worth</p>
-                      <p className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">
+                      <p className="text-sm opacity-90">Total Net Worth</p>
+                      <p className="text-3xl font-bold mt-2">
                         {formatCurrency(financialMetrics.netWorth)}
                       </p>
+                      <p className="text-xs opacity-75 mt-2">
+                        Across {accounts.length} account{accounts.length !== 1 ? 's' : ''}
+                      </p>
                     </div>
-                    <Wallet className="w-6 h-6 sm:w-8 sm:h-8 text-purple-600 dark:text-purple-400 flex-shrink-0 ml-2" />
+                    <Wallet className="w-12 h-12 opacity-20" />
                   </div>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 shadow-sm">
+                <div className={`bg-gradient-to-br rounded-xl p-6 shadow-lg text-white ${
+                  financialMetrics.savingsRate >= 0
+                    ? 'from-green-500 to-green-600 dark:from-green-600 dark:to-green-700'
+                    : 'from-red-500 to-red-600 dark:from-red-600 dark:to-red-700'
+                }`}>
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
-                      <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">Monthly Income</p>
-                      <p className="text-lg sm:text-2xl font-bold text-green-600 dark:text-green-400 truncate">
+                      <p className="text-sm opacity-90">Monthly Savings Rate</p>
+                      <p className="text-3xl font-bold mt-2">
+                        {financialMetrics.savingsRate >= 0 ? '+' : ''}{financialMetrics.savingsRate.toFixed(1)}%
+                      </p>
+                      <p className="text-xs opacity-75 mt-2">
+                        {financialMetrics.monthlyIncome > 0 
+                          ? `${formatCurrency(Math.max(0, financialMetrics.monthlyIncome - financialMetrics.monthlyExpenses))} saved this month`
+                          : 'No income this month'
+                        }
+                      </p>
+                    </div>
+                    <PiggyBank className="w-12 h-12 opacity-20" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Income and Expense Overview */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border-l-4 border-green-500">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Monthly Income</p>
+                      <p className="text-2xl font-bold text-green-600 dark:text-green-400 mt-1">
                         {formatCurrency(financialMetrics.monthlyIncome)}
                       </p>
                     </div>
-                    <TrendingUp className="w-6 h-6 sm:w-8 sm:h-8 text-green-600 dark:text-green-400 flex-shrink-0 ml-2" />
+                    <TrendingUp className="w-8 h-8 text-green-500 opacity-50" />
                   </div>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 shadow-sm">
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border-l-4 border-red-500">
                   <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">Monthly Expenses</p>
-                      <p className="text-lg sm:text-2xl font-bold text-red-600 dark:text-red-400 truncate">
+                    <div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Monthly Expenses</p>
+                      <p className="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">
                         {formatCurrency(financialMetrics.monthlyExpenses)}
                       </p>
                     </div>
-                    <TrendingDown className="w-6 h-6 sm:w-8 sm:h-8 text-red-600 dark:text-red-400 flex-shrink-0 ml-2" />
+                    <TrendingDown className="w-8 h-8 text-red-500 opacity-50" />
                   </div>
                 </div>
+              </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">Savings Rate</p>
-                      <p className="text-lg sm:text-2xl font-bold text-blue-600 dark:text-blue-400">
-                        {financialMetrics.savingsRate.toFixed(1)}%
-                      </p>
+              {/* Expense Breakdown */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Expense Tracking</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between mb-2">
+                      <Calendar className="w-5 h-5 text-orange-500" />
+                      <span className="text-xs text-gray-500 dark:text-gray-400">Today</span>
                     </div>
-                    <PiggyBank className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 dark:text-blue-400 flex-shrink-0 ml-2" />
+                    <p className="text-xl font-bold text-gray-900 dark:text-white">
+                      {formatCurrency(financialMetrics.dailyExpenses)}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      vs avg: {formatCurrency(financialMetrics.avgDailyExpense)}
+                    </p>
+                  </div>
+
+                  <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between mb-2">
+                      <CalendarDays className="w-5 h-5 text-indigo-500" />
+                      <span className="text-xs text-gray-500 dark:text-gray-400">This Week</span>
+                    </div>
+                    <p className="text-xl font-bold text-gray-900 dark:text-white">
+                      {formatCurrency(financialMetrics.weeklyExpenses)}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Since Monday
+                    </p>
+                  </div>
+
+                  <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between mb-2">
+                      <TrendingUp className="w-5 h-5 text-purple-500" />
+                      <span className="text-xs text-gray-500 dark:text-gray-400">Burn Rate</span>
+                    </div>
+                    <p className="text-xl font-bold text-gray-900 dark:text-white">
+                      {formatCurrency(financialMetrics.monthlyExpenses / 30)}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Per day this month
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Analytics Insights */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Financial Insights</h3>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg p-3 border border-purple-200 dark:border-purple-700">
+                    <p className="text-xs font-medium text-purple-600 dark:text-purple-400">Daily Average</p>
+                    <p className="text-lg font-bold text-purple-700 dark:text-purple-300 mt-1">
+                      {formatCurrency(financialMetrics.avgDailyExpense)}
+                    </p>
+                    <p className="text-xs text-purple-600/70 dark:text-purple-400/70">Last 30 days</p>
+                  </div>
+                  
+                  <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg p-3 border border-blue-200 dark:border-blue-700">
+                    <p className="text-xs font-medium text-blue-600 dark:text-blue-400">Weekly Projection</p>
+                    <p className="text-lg font-bold text-blue-700 dark:text-blue-300 mt-1">
+                      {formatCurrency(financialMetrics.avgDailyExpense * 7)}
+                    </p>
+                    <p className="text-xs text-blue-600/70 dark:text-blue-400/70">Based on avg</p>
+                  </div>
+                  
+                  <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/20 dark:to-emerald-800/20 rounded-lg p-3 border border-emerald-200 dark:border-emerald-700">
+                    <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Budget Days Left</p>
+                    <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300 mt-1">
+                      {financialMetrics.avgDailyExpense > 0 
+                        ? Math.max(0, Math.floor((financialMetrics.monthlyIncome - financialMetrics.monthlyExpenses) / financialMetrics.avgDailyExpense))
+                        : '∞'
+                      }
+                    </p>
+                    <p className="text-xs text-emerald-600/70 dark:text-emerald-400/70">At current rate</p>
+                  </div>
+                  
+                  <div className="bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/20 dark:to-amber-800/20 rounded-lg p-3 border border-amber-200 dark:border-amber-700">
+                    <p className="text-xs font-medium text-amber-600 dark:text-amber-400">Monthly Projection</p>
+                    <p className="text-lg font-bold text-amber-700 dark:text-amber-300 mt-1">
+                      {formatCurrency(financialMetrics.avgDailyExpense * 30)}
+                    </p>
+                    <p className="text-xs text-amber-600/70 dark:text-amber-400/70">Expected total</p>
                   </div>
                 </div>
               </div>
@@ -1165,15 +1331,20 @@ function App() {
                 </div>
 
                 <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 shadow-sm">
-                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">Monthly Spending Trend</h3>
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">Monthly Cash Flow Trend</h3>
                   <div className="h-64 sm:h-72 lg:h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={monthlySpendingData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis dataKey="month" stroke="#6b7280" />
-                      <YAxis stroke="#6b7280" tickFormatter={(value) => formatCurrency(value)} />
-                      <Tooltip formatter={(value) => formatCurrency(value)} />
-                      <Bar dataKey="amount" fill="#ec4899" radius={[8, 8, 0, 0]} />
+                      <XAxis dataKey="month" stroke="#6b7280" tick={{ fontSize: 12 }} />
+                      <YAxis stroke="#6b7280" tickFormatter={(value) => formatCurrency(value)} tick={{ fontSize: 12 }} />
+                      <Tooltip 
+                        formatter={(value) => formatCurrency(value)}
+                        contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #e5e7eb' }}
+                      />
+                      <Legend />
+                      <Bar dataKey="income" name="Income" fill="#10b981" radius={[8, 8, 0, 0]} />
+                      <Bar dataKey="expense" name="Expenses" fill="#ef4444" radius={[8, 8, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                   </div>
