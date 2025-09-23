@@ -9,7 +9,7 @@
   
   **Track your financial health at a glance with AI-powered insights**
   
-  [Live Demo](https://your-app.netlify.app) • [Report Bug](https://github.com/er-abinesh-21/Pocket-Pulse/issues) • [Request Feature](https://github.com/er-abinesh-21/Pocket-Pulse/issues)
+  [Live Demo](https://your-app.netlify.app)
 
 </div>
 
@@ -222,7 +222,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Abinesh**
 - GitHub: [@er-abinesh-21](https://github.com/er-abinesh-21)
-- Project Link: [https://github.com/er-abinesh-21/Pocket-Pulse](https://github.com/er-abinesh-21/Pocket-Pulse)
+- Project Link: [Github.com/Pocket-Pulse](https://github.com/er-abinesh-21/Pocket-Pulse)
 
 ## 🙏 Acknowledgments
 
