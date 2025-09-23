@@ -1,21 +1,90 @@
-# 💰 Personal Finance Dashboard - Setup Guide
+# 💰 PocketPulse - Personal Finance Dashboard
 
-## 🚀 Quick Start Guide
+<div align="center">
+  
+  ![React](https://img.shields.io/badge/React-18.2.0-61DAFB?style=for-the-badge&logo=react)
+  ![Firebase](https://img.shields.io/badge/Firebase-10.7.1-FFCA28?style=for-the-badge&logo=firebase)
+  ![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.3.0-06B6D4?style=for-the-badge&logo=tailwindcss)
+  ![Vite](https://img.shields.io/badge/Vite-5.0-646CFF?style=for-the-badge&logo=vite)
+  
+  **Track your financial health at a glance with AI-powered insights**
+  
+  [Live Demo](https://your-app.netlify.app) • [Report Bug](https://github.com/er-abinesh-21/Pocket-Pulse/issues) • [Request Feature](https://github.com/er-abinesh-21/Pocket-Pulse/issues)
+
+</div>
+
+## ✨ Features
+
+- 🔐 **Secure Authentication** - Email/Password and Google Sign-in via Firebase
+- 💳 **Multi-Account Management** - Track checking, savings, credit cards, and investments
+- 📊 **Visual Analytics** - Interactive charts for spending patterns and trends
+- 💰 **Transaction Tracking** - Categorized income and expense management
+- 📈 **Budget Planning** - Set and monitor monthly spending limits
+- 🤖 **AI Financial Advisor** - Personalized insights powered by Google Gemini
+- 🌓 **Dark Mode** - Easy on the eyes with theme toggle
+- 📱 **Fully Responsive** - Works seamlessly on all devices
+
+## 🖼️ Screenshots
+
+<details>
+<summary>Click to view screenshots</summary>
+
+### Dashboard Overview
+![Dashboard](https://via.placeholder.com/800x400?text=Dashboard+Overview)
+
+### Transaction Management
+![Transactions](https://via.placeholder.com/800x400?text=Transaction+Management)
+
+### AI Insights
+![AI Insights](https://via.placeholder.com/800x400?text=AI+Financial+Insights)
+
+</details>
+
+## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js installed on your computer (Download from https://nodejs.org/)
-- A Google account (for Firebase and Gemini API)
 
-## 📋 Step-by-Step Setup Instructions
+- Node.js 18+ and npm
+- Firebase account (free)
+- Google Gemini API key (free)
 
-### Step 1: Firebase Setup (5 minutes)
+### Installation
 
-1. **Create Firebase Project:**
-   - Go to https://console.firebase.google.com/
-   - Click "Create a project"
-   - Name it (e.g., "my-finance-dashboard")
-   - Disable Google Analytics (optional)
-   - Click "Create project"
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/er-abinesh-21/Pocket-Pulse.git
+   cd Pocket-Pulse
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Set up environment variables**
+   ```bash
+   cp .env.example .env
+   ```
+   Then edit `.env` with your actual API keys (see Configuration section below)
+
+4. **Start the development server**
+   ```bash
+   npm run dev
+   ```
+
+5. **Open in browser**
+   ```
+   http://localhost:3000
+   ```
+
+## ⚙️ Configuration
+
+### Firebase Setup
+
+1. **Create a Firebase Project**
+   - Visit [Firebase Console](https://console.firebase.google.com/)
+   - Create a new project
+   - Note down your configuration
 
 2. **Enable Authentication:**
    - In left sidebar, click "Authentication"
@@ -27,150 +96,145 @@
    - Click "Save"
    
    **For Google Sign-in:**
-   - Click on "Google" in the providers list
-   - Toggle "Enable" switch
-   - Add your project support email
-   - Click "Save"
+   - Enable "Google" provider
+   - Add support email and save
 
-3. **Enable Firestore:**
-   - In left sidebar, click "Firestore Database"
-   - Click "Create database"
-   - Choose "Start in production mode"
-   - Select your region
-   - Click "Enable"
+3. **Enable Firestore Database**
+   - Click "Firestore Database" → "Create database"
+   - Choose production mode and your region
 
-4. **Get Your Config:**
-   - Click gear icon ⚙️ → "Project settings"
-   - Scroll to "Your apps"
-   - Click "</>" (Web) icon
-   - Register app with a name
-   - Copy the configuration object
+4. **Get Firebase Configuration**
+   - Project Settings → Your apps → Add web app
+   - Copy the configuration
 
-5. **Update App.jsx:**
-   - Open `src/App.jsx`
-   - Find lines 38-45
-   - Replace with your Firebase config:
-   ```javascript
-   const firebaseConfig = {
-     apiKey: "your-actual-api-key",
-     authDomain: "your-project.firebaseapp.com",
-     projectId: "your-project-id",
-     storageBucket: "your-project.appspot.com",
-     messagingSenderId: "your-sender-id",
-     appId: "your-app-id"
-   };
-   ```
+### Gemini API Setup
 
-### Step 2: Gemini API Setup (2 minutes)
+1. **Get your API key from [Google AI Studio](https://aistudio.google.com/)**
+2. **Click "Get API key" → "Create API key"**
 
-1. **Get API Key:**
-   - Go to https://aistudio.google.com/
-   - Sign in with Google account
-   - Click "Get API key" → "Create API key"
-   - Copy the API key
+### Environment Variables
 
-2. **Update App.jsx:**
-   - Find line 53
-   - Replace with your key:
-   ```javascript
-   const GEMINI_API_KEY = 'your-actual-gemini-api-key';
-   ```
+Create a `.env` file in the root directory with:
 
-### Step 3: Install & Run (2 minutes)
+```env
+# Firebase Configuration
+VITE_FIREBASE_API_KEY=your_firebase_api_key
+VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your_project_id
+VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+VITE_FIREBASE_APP_ID=your_app_id
 
-1. **Open Terminal/Command Prompt in project folder**
+# Gemini API
+VITE_GEMINI_API_KEY=your_gemini_api_key
+```
 
-2. **Install dependencies:**
+## 📱 Usage
+
+### Getting Started
+1. **Sign up** with email/password or **Sign in with Google**
+2. **Add an account** (Checking, Savings, Credit Card, etc.)
+3. **Record transactions** with categories
+4. **Set budgets** for different spending categories
+5. **Get AI insights** for financial optimization
+
+### Key Features Usage
+
+| Feature | Description |
+|---------|------------|
+| **Dashboard** | View net worth, monthly income/expenses, savings rate |
+| **Transactions** | Add, edit, delete income and expense records |
+| **Accounts** | Manage multiple financial accounts |
+| **Budgets** | Set and track monthly spending limits |
+| **AI Insights** | Get personalized financial advice |
+
+## 🚀 Deployment
+
+### Deploy to Netlify
+
+1. **Build the project**
    ```bash
-   npm install
+   npm run build
    ```
 
-3. **Start the app:**
+2. **Deploy via Netlify CLI**
    ```bash
-   npm run dev
+   npm install -g netlify-cli
+   netlify deploy --prod --dir=dist
    ```
 
-4. **Open in browser:**
-   - The terminal will show a URL (usually http://localhost:3000)
-   - Click it or copy-paste into your browser
+   Or drag and drop the `dist` folder to [Netlify](https://app.netlify.com/)
 
-## 🎯 Using the App
+3. **Add environment variables in Netlify**
+   - Go to Site Settings → Environment Variables
+   - Add all variables from your `.env` file
 
-### First Time Setup:
-1. Click "Sign up" to create an account
-2. Enter email and password (min 6 characters)
-3. You'll be logged in automatically
+### Deploy to Vercel
 
-### Features:
-- **Overview Tab:** See your financial summary and charts
-- **Transactions Tab:** Add income/expenses
-- **Accounts Tab:** Create bank accounts, credit cards, etc.
-- **Budgets Tab:** Set monthly spending limits
-- **AI Insights Tab:** Get personalized financial advice
+```bash
+npm install -g vercel
+vercel --prod
+```
 
-### Adding Your First Data:
-1. Go to "Accounts" → Click "Add"
-2. Create an account (e.g., "My Checking", type: Checking, balance: 1000)
-3. Go to "Transactions" → Click "Add"
-4. Add a transaction (select the account you created)
-5. Watch your dashboard update in real-time!
+## 🛠️ Built With
 
-## 🔧 Troubleshooting
+- **Frontend Framework:** React 18.2 with Vite
+- **Styling:** Tailwind CSS
+- **Database:** Firebase Firestore
+- **Authentication:** Firebase Auth
+- **Charts:** Recharts
+- **AI Integration:** Google Gemini API
+- **Icons:** Lucide React
+- **Deployment:** Netlify/Vercel
 
-### Common Issues:
+## 📂 Project Structure
 
-**"Firebase not configured" error:**
-- Make sure you replaced the Firebase config in App.jsx
-- Check that all values are in quotes
+```
+PocketPulse/
+├── src/
+│   ├── App.jsx         # Main application component
+│   ├── main.jsx        # Application entry point
+│   └── index.css       # Global styles and Tailwind
+├── public/
+│   └── _redirects      # Netlify routing configuration
+├── .env.example        # Environment variables template
+├── package.json        # Dependencies and scripts
+├── vite.config.js      # Vite configuration
+├── tailwind.config.js  # Tailwind CSS configuration
+└── netlify.toml        # Netlify deployment config
+```
 
-**"Cannot connect to Firebase":**
-- Check your internet connection
-- Verify Firebase project is active
-- Make sure Authentication and Firestore are enabled
+## 🤝 Contributing
 
-**"npm install" fails:**
-- Make sure Node.js is installed: run `node --version`
-- Try deleting `node_modules` folder and run `npm install` again
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-**App won't start:**
-- Make sure you're in the project folder
-- Try: `npm install` then `npm run dev`
+1. Fork the project
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-## 🔒 Security Notes
+## 📄 License
 
-- Never share your API keys publicly
-- Don't commit API keys to GitHub
-- For production, use environment variables
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 📱 Features Overview
+## 👨‍💻 Author
 
-✅ **User Authentication** - Email/Password and Google Sign-in
-✅ **Multiple Accounts** - Track different bank accounts
-✅ **Transaction Management** - Income & expense tracking
-✅ **Budget Tracking** - Set and monitor spending limits
-✅ **Visual Analytics** - Charts and graphs
-✅ **AI Insights** - Personalized financial advice
-✅ **Dark Mode** - Easy on the eyes
-✅ **Fully Responsive** - Works on all devices
+**Abinesh**
+- GitHub: [@er-abinesh-21](https://github.com/er-abinesh-21)
+- Project Link: [https://github.com/er-abinesh-21/Pocket-Pulse](https://github.com/er-abinesh-21/Pocket-Pulse)
 
-## 🆘 Need Help?
+## 🙏 Acknowledgments
 
-1. Check if Firebase and Firestore are enabled
-2. Verify API keys are correctly pasted
-3. Make sure you're using a modern browser (Chrome, Firefox, Edge)
-4. Check the browser console for error messages (F12 → Console tab)
+- Firebase for backend services
+- Google Gemini for AI capabilities
+- React and Vite communities
+- Tailwind CSS for styling framework
 
-## 🎉 Success Checklist
+---
 
-- [ ] Firebase project created
-- [ ] Authentication enabled
-- [ ] Firestore enabled
-- [ ] Firebase config added to App.jsx
-- [ ] Gemini API key added to App.jsx
-- [ ] npm install completed
-- [ ] npm run dev started
-- [ ] App opens in browser
-- [ ] Can create an account
-- [ ] Can add transactions
-
-Enjoy managing your finances! 💪
+<div align="center">
+  Made with ❤️ by Abinesh
+  
+  ⭐ Star this repo if you find it helpful!
+</div>
