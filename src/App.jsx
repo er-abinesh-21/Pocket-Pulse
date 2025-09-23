@@ -45,10 +45,40 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+// Validate Firebase configuration
+const validateFirebaseConfig = () => {
+  const requiredFields = ['apiKey', 'authDomain', 'projectId', 'appId'];
+  const missingFields = requiredFields.filter(field => !firebaseConfig[field]);
+  
+  if (missingFields.length > 0) {
+    console.error('Missing Firebase configuration fields:', missingFields);
+    console.error('Please check your .env file and ensure all VITE_FIREBASE_* variables are set correctly.');
+    return false;
+  }
+  return true;
+};
+
+// Initialize Firebase with error handling
+let app, auth, db;
+try {
+  if (validateFirebaseConfig()) {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+    
+    // Enable Firestore offline persistence
+    // This can help with connection issues
+    console.log('Firebase initialized successfully');
+    console.log('Project ID:', firebaseConfig.projectId);
+    console.log('Auth Domain:', firebaseConfig.authDomain);
+  } else {
+    throw new Error('Invalid Firebase configuration');
+  }
+} catch (error) {
+  console.error('Firebase initialization error:', error);
+  console.error('Firebase Config:', firebaseConfig);
+  // You can show a user-friendly error message here
+}
 
 // Initialize Google Auth Provider
 const googleProvider = new GoogleAuthProvider();
@@ -82,6 +112,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
+  const [currency, setCurrency] = useState(() => localStorage.getItem('currency') || 'USD');
 
   // Financial data states
   const [accounts, setAccounts] = useState([]);
@@ -109,14 +140,38 @@ function App() {
   // AI suggestions state
   const [aiSuggestions, setAiSuggestions] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
+  
+  // Currency configuration
+  const currencies = {
+    USD: { symbol: '$', name: 'US Dollar', locale: 'en-US' },
+    INR: { symbol: '₹', name: 'Indian Rupee', locale: 'en-IN' },
+    EUR: { symbol: '€', name: 'Euro', locale: 'de-DE' },
+    GBP: { symbol: '£', name: 'British Pound', locale: 'en-GB' },
+    JPY: { symbol: '¥', name: 'Japanese Yen', locale: 'ja-JP' },
+    CAD: { symbol: 'C$', name: 'Canadian Dollar', locale: 'en-CA' },
+    AUD: { symbol: 'A$', name: 'Australian Dollar', locale: 'en-AU' }
+  };
 
   // Initialize auth listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
+    if (!auth) {
+      console.error('Firebase Auth not initialized');
       setAuthLoading(false);
-      if (user) loadUserData(user.uid);
-    });
+      return;
+    }
+    
+    const unsubscribe = onAuthStateChanged(auth, 
+      (user) => {
+        setUser(user);
+        setAuthLoading(false);
+        if (user) loadUserData(user.uid);
+      },
+      (error) => {
+        console.error('Auth state change error:', error);
+        setAuthLoading(false);
+        showNotification('Authentication error. Please refresh the page.', 'error');
+      }
+    );
     return unsubscribe;
   }, []);
 
@@ -129,25 +184,57 @@ function App() {
       document.documentElement.classList.remove('dark');
     }
   }, [darkMode]);
+  
+  // Save currency preference
+  useEffect(() => {
+    localStorage.setItem('currency', currency);
+  }, [currency]);
 
   // Load user data from Firestore
   const loadUserData = async (userId) => {
+    if (!db) {
+      console.error('Firestore not initialized');
+      showNotification('Database connection error. Please check your configuration.', 'error');
+      return;
+    }
+    
     setLoading(true);
     try {
+      console.log('Loading data for user:', userId);
+      
       // Load accounts
       const accountsSnapshot = await getDocs(collection(db, `users/${userId}/accounts`));
       const accountsData = accountsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setAccounts(accountsData);
+      console.log('Loaded accounts:', accountsData.length);
 
       // Load transactions with real-time updates
       const transactionsQuery = query(
         collection(db, `users/${userId}/transactions`),
         orderBy('date', 'desc')
       );
-      onSnapshot(transactionsQuery, (snapshot) => {
-        const transactionsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setTransactions(transactionsData);
-      });
+      const unsubscribe = onSnapshot(transactionsQuery, 
+        (snapshot) => {
+          const transactionsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setTransactions(transactionsData);
+          console.log('Loaded transactions:', transactionsData.length);
+        },
+        (error) => {
+          console.error('Firestore real-time listener error:', error);
+          console.error('Error code:', error.code);
+          console.error('Error message:', error.message);
+          
+          if (error.code === 'permission-denied') {
+            showNotification('Permission denied. Please check Firestore security rules.', 'error');
+          } else if (error.code === 'unavailable') {
+            showNotification('Firestore is unavailable. Please check your internet connection.', 'error');
+          } else if (error.code === 'failed-precondition') {
+            showNotification('Firestore indexes may need to be created. Check the console for details.', 'error');
+          } else {
+            showNotification('Error loading transactions: ' + error.message, 'error');
+          }
+        }
+      );
 
       // Load budgets
       const budgetsSnapshot = await getDocs(collection(db, `users/${userId}/budgets`));
@@ -174,10 +261,25 @@ function App() {
   // Authentication handlers
   const handleAuth = async (e) => {
     e.preventDefault();
+    
+    if (!auth) {
+      showNotification('Authentication service not initialized', 'error');
+      return;
+    }
+    
     setLoading(true);
     try {
       if (authMode === 'signup') {
-        await createUserWithEmailAndPassword(auth, authForm.email, authForm.password);
+        const userCredential = await createUserWithEmailAndPassword(auth, authForm.email, authForm.password);
+        // Create initial account for new users
+        if (userCredential.user && db) {
+          await addDoc(collection(db, `users/${userCredential.user.uid}/accounts`), {
+            name: 'Main Account',
+            type: 'checking',
+            balance: 0,
+            createdAt: serverTimestamp()
+          });
+        }
         showNotification('Account created successfully!', 'success');
       } else {
         await signInWithEmailAndPassword(auth, authForm.email, authForm.password);
@@ -185,7 +287,20 @@ function App() {
       }
       setAuthForm({ email: '', password: '' });
     } catch (error) {
-      showNotification(error.message, 'error');
+      console.error('Auth error:', error);
+      let errorMessage = 'Authentication failed';
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = 'Email is already registered';
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = 'Password should be at least 6 characters';
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = 'Invalid email address';
+      } else if (error.code === 'auth/user-not-found') {
+        errorMessage = 'No account found with this email';
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = 'Incorrect password';
+      }
+      showNotification(errorMessage, 'error');
     } finally {
       setLoading(false);
     }
@@ -233,21 +348,96 @@ function App() {
   // Account management
   const handleAddAccount = async (e) => {
     e.preventDefault();
-    if (!user) return;
+    
+    if (!user) {
+      showNotification('Please log in to add an account', 'error');
+      return;
+    }
+    
+    if (!db) {
+      showNotification('Database not initialized', 'error');
+      return;
+    }
+    
+    // Validate form inputs
+    if (!accountForm.name.trim()) {
+      showNotification('Please enter an account name', 'error');
+      return;
+    }
+    
+    const balance = parseFloat(accountForm.balance);
+    if (isNaN(balance)) {
+      showNotification('Please enter a valid balance', 'error');
+      return;
+    }
+    
     setLoading(true);
     try {
-      await addDoc(collection(db, `users/${user.uid}/accounts`), {
-        name: accountForm.name,
+      const docRef = await addDoc(collection(db, `users/${user.uid}/accounts`), {
+        name: accountForm.name.trim(),
         type: accountForm.type,
-        balance: parseFloat(accountForm.balance),
+        balance: balance,
         createdAt: serverTimestamp()
       });
+      
+      console.log('Account created with ID:', docRef.id);
+      
       await loadUserData(user.uid);
       setShowAccountForm(false);
       setAccountForm({ name: '', type: 'checking', balance: '' });
       showNotification('Account added successfully!', 'success');
     } catch (error) {
+      console.error('Error adding account:', error);
       showNotification('Error adding account: ' + error.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Delete account
+  const handleDeleteAccount = async (accountId) => {
+    if (!user) {
+      showNotification('Please log in to delete an account', 'error');
+      return;
+    }
+    
+    if (!db) {
+      showNotification('Database not initialized', 'error');
+      return;
+    }
+    
+    // Check if account has transactions
+    const accountTransactions = transactions.filter(t => t.account === accountId);
+    if (accountTransactions.length > 0) {
+      const confirmDelete = window.confirm(
+        `This account has ${accountTransactions.length} transaction(s). Deleting it will also delete all associated transactions. Are you sure?`
+      );
+      if (!confirmDelete) return;
+    } else {
+      if (!window.confirm('Are you sure you want to delete this account?')) return;
+    }
+    
+    setLoading(true);
+    try {
+      // Delete all transactions associated with this account
+      if (accountTransactions.length > 0) {
+        const batch = [];
+        for (const transaction of accountTransactions) {
+          batch.push(deleteDoc(doc(db, `users/${user.uid}/transactions`, transaction.id)));
+        }
+        await Promise.all(batch);
+        console.log(`Deleted ${accountTransactions.length} transactions`);
+      }
+      
+      // Delete the account
+      await deleteDoc(doc(db, `users/${user.uid}/accounts`, accountId));
+      console.log('Account deleted:', accountId);
+      
+      await loadUserData(user.uid);
+      showNotification('Account deleted successfully!', 'success');
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      showNotification('Error deleting account: ' + error.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -256,13 +446,50 @@ function App() {
   // Transaction management
   const handleAddTransaction = async (e) => {
     e.preventDefault();
-    if (!user) return;
+    
+    if (!user) {
+      showNotification('Please log in to add a transaction', 'error');
+      return;
+    }
+    
+    if (!db) {
+      showNotification('Database not initialized', 'error');
+      return;
+    }
+    
+    // Validate form inputs
+    const amount = parseFloat(transactionForm.amount);
+    if (isNaN(amount) || amount <= 0) {
+      showNotification('Please enter a valid amount', 'error');
+      return;
+    }
+    
+    if (!transactionForm.description.trim()) {
+      showNotification('Please enter a description', 'error');
+      return;
+    }
+    
+    if (!transactionForm.account) {
+      showNotification('Please select an account', 'error');
+      return;
+    }
+    
+    if (transactionForm.type === 'expense' && !transactionForm.category) {
+      showNotification('Please select a category', 'error');
+      return;
+    }
+    
+    if (transactionForm.type === 'income' && !transactionForm.incomeSource) {
+      showNotification('Please select an income source', 'error');
+      return;
+    }
+    
     setLoading(true);
     try {
       const transactionData = {
         type: transactionForm.type,
-        amount: parseFloat(transactionForm.amount),
-        description: transactionForm.description,
+        amount: amount,
+        description: transactionForm.description.trim(),
         category: transactionForm.type === 'expense' ? transactionForm.category : 'Income',
         incomeSource: transactionForm.type === 'income' ? transactionForm.incomeSource : null,
         account: transactionForm.account,
@@ -309,9 +536,30 @@ function App() {
   };
 
   const handleDeleteTransaction = async (transaction) => {
-    if (!user) return;
+    if (!user) {
+      showNotification('Please log in to delete a transaction', 'error');
+      return;
+    }
+    
+    if (!db) {
+      showNotification('Database not initialized', 'error');
+      return;
+    }
+    
+    if (!transaction || !transaction.id) {
+      showNotification('Invalid transaction', 'error');
+      return;
+    }
+    
+    // Confirm deletion
+    if (!window.confirm('Are you sure you want to delete this transaction?')) {
+      return;
+    }
+    
     setLoading(true);
     try {
+      console.log('Deleting transaction:', transaction.id);
+      
       await deleteDoc(doc(db, `users/${user.uid}/transactions`, transaction.id));
       
       // Update account balance
@@ -323,11 +571,13 @@ function App() {
         await updateDoc(doc(db, `users/${user.uid}/accounts`, account.id), {
           balance: account.balance + balanceChange
         });
+        console.log('Updated account balance for:', account.name);
       }
 
       await loadUserData(user.uid);
       showNotification('Transaction deleted successfully!', 'success');
     } catch (error) {
+      console.error('Error deleting transaction:', error);
       showNotification('Error deleting transaction: ' + error.message, 'error');
     } finally {
       setLoading(false);
@@ -336,22 +586,48 @@ function App() {
 
   // Budget management
   const handleUpdateBudgets = async () => {
-    if (!user) return;
+    if (!user) {
+      showNotification('Please log in to update budgets', 'error');
+      return;
+    }
+    
+    if (!db) {
+      showNotification('Database not initialized', 'error');
+      return;
+    }
+    
     setLoading(true);
     try {
+      console.log('Updating budgets:', budgetForm);
+      
+      let updatedCount = 0;
       for (const [category, limit] of Object.entries(budgetForm)) {
-        if (limit && parseFloat(limit) > 0) {
+        const limitValue = parseFloat(limit);
+        if (limit && limitValue > 0) {
           const budgetRef = doc(db, `users/${user.uid}/budgets`, category);
           await setDoc(budgetRef, { 
             category,
-            limit: parseFloat(limit),
+            limit: limitValue,
             updatedAt: serverTimestamp()
           }, { merge: true });
+          updatedCount++;
+          console.log(`Updated budget for ${category}: $${limitValue}`);
+        } else if (limit === '' || limitValue === 0) {
+          // Remove budget if set to 0 or empty
+          const budgetRef = doc(db, `users/${user.uid}/budgets`, category);
+          try {
+            await deleteDoc(budgetRef);
+            console.log(`Removed budget for ${category}`);
+          } catch (err) {
+            // Budget might not exist, ignore
+          }
         }
       }
+      
       setBudgets(budgetForm);
-      showNotification('Budgets updated successfully!', 'success');
+      showNotification(`Budgets updated successfully! (${updatedCount} categories)`, 'success');
     } catch (error) {
+      console.error('Error updating budgets:', error);
       showNotification('Error updating budgets: ' + error.message, 'error');
     } finally {
       setLoading(false);
@@ -534,11 +810,54 @@ function App() {
 
   // Format currency
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', {
+    const currencyConfig = currencies[currency] || currencies.USD;
+    return new Intl.NumberFormat(currencyConfig.locale, {
       style: 'currency',
-      currency: 'USD'
+      currency: currency
     }).format(amount || 0);
   };
+
+  // Check Firebase configuration
+  if (!auth || !db) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-blue-50 dark:from-gray-900 dark:to-gray-800 p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-md w-full shadow-xl">
+          <div className="text-center">
+            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Configuration Error</h2>
+            <p className="text-gray-600 dark:text-gray-300 mb-4">
+              Firebase is not properly configured. Please check your .env file.
+            </p>
+            <div className="text-left bg-gray-100 dark:bg-gray-700 rounded-lg p-4 mb-4">
+              <p className="text-sm font-mono text-gray-700 dark:text-gray-300">
+                Required environment variables:
+              </p>
+              <ul className="text-xs font-mono mt-2 space-y-1">
+                <li className={firebaseConfig.apiKey ? 'text-green-600' : 'text-red-600'}>
+                  {firebaseConfig.apiKey ? '✓' : '✗'} VITE_FIREBASE_API_KEY
+                </li>
+                <li className={firebaseConfig.authDomain ? 'text-green-600' : 'text-red-600'}>
+                  {firebaseConfig.authDomain ? '✓' : '✗'} VITE_FIREBASE_AUTH_DOMAIN
+                </li>
+                <li className={firebaseConfig.projectId ? 'text-green-600' : 'text-red-600'}>
+                  {firebaseConfig.projectId ? '✓' : '✗'} VITE_FIREBASE_PROJECT_ID
+                </li>
+                <li className={firebaseConfig.appId ? 'text-green-600' : 'text-red-600'}>
+                  {firebaseConfig.appId ? '✓' : '✗'} VITE_FIREBASE_APP_ID
+                </li>
+              </ul>
+            </div>
+            <button 
+              onClick={() => window.location.reload()} 
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+            >
+              Reload Page
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Loading screen
   if (authLoading) {
@@ -557,13 +876,13 @@ function App() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-blue-50 dark:from-gray-900 dark:to-gray-800 p-4">
         <div className="w-full max-w-md">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
-            <div className="text-center mb-8">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-purple-100 dark:bg-purple-900 rounded-full mb-4">
-                <Wallet className="w-8 h-8 text-purple-600 dark:text-purple-400" />
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 sm:p-8">
+            <div className="text-center mb-6 sm:mb-8">
+              <div className="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 bg-purple-100 dark:bg-purple-900 rounded-full mb-4">
+                <Wallet className="w-7 h-7 sm:w-8 sm:h-8 text-purple-600 dark:text-purple-400" />
               </div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Finance Dashboard</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">Finance Dashboard</h1>
+              <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 mt-2">
                 {authMode === 'login' ? 'Welcome back!' : 'Create your account'}
               </p>
             </div>
@@ -575,7 +894,7 @@ function App() {
                   type="email"
                   value={authForm.email}
                   onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 dark:bg-gray-700 dark:text-white"
+                  className="w-full px-3 sm:px-4 py-2.5 sm:py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 dark:bg-gray-700 dark:text-white"
                   required
                 />
               </div>
@@ -586,7 +905,7 @@ function App() {
                   type="password"
                   value={authForm.password}
                   onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 dark:bg-gray-700 dark:text-white"
+                  className="w-full px-3 sm:px-4 py-2.5 sm:py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 dark:bg-gray-700 dark:text-white"
                   required
                   minLength="6"
                 />
@@ -595,7 +914,7 @@ function App() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                className="w-full py-2.5 sm:py-3 px-4 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
               >
                 {loading ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -619,7 +938,7 @@ function App() {
             <button
               onClick={handleGoogleSignIn}
               disabled={loading}
-              className="w-full py-3 px-4 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium rounded-lg transition-colors hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+              className="w-full py-2.5 sm:py-3 px-4 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium rounded-lg transition-colors hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
             >
               {loading ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -663,35 +982,47 @@ function App() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-16">
               <div className="flex items-center space-x-2">
-                <Wallet className="w-8 h-8 text-purple-600 dark:text-purple-400" />
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white">Finance Dashboard</h1>
+                <Wallet className="w-6 h-6 sm:w-8 sm:h-8 text-purple-600 dark:text-purple-400" />
+                <h1 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">Finance</h1>
               </div>
 
-              <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2 sm:space-x-4">
                 <button
                   onClick={() => setDarkMode(!darkMode)}
-                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  className="p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                 >
                   {darkMode ? (
-                    <Sun className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                    <Sun className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600 dark:text-gray-400" />
                   ) : (
-                    <Moon className="w-5 h-5 text-gray-600" />
+                    <Moon className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
                   )}
                 </button>
 
-                <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
+                {/* Currency Selector */}
+                <select
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value)}
+                  className="px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  title="Select Currency"
+                >
+                  {Object.entries(currencies).map(([code, config]) => (
+                    <option key={code} value={code}>
+                      {config.symbol} {code}
+                    </option>
+                  ))}
+                </select>
+
+                <div className="hidden sm:flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
                   <User className="w-4 h-4" />
-                  <span className="hidden sm:inline">{user.displayName || user.email}</span>
-                  <span className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded font-mono">
-                    {user.uid}
-                  </span>
+                  <span className="hidden md:inline">{user.displayName || user.email}</span>
                 </div>
 
                 <button
                   onClick={handleLogout}
-                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  className="p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  title="Logout"
                 >
-                  <LogOut className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                  <LogOut className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600 dark:text-gray-400" />
                 </button>
               </div>
             </div>
@@ -717,18 +1048,25 @@ function App() {
 
         {/* Tabs */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex space-x-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
-            {['overview', 'transactions', 'accounts', 'budgets', 'insights'].map(tab => (
+          <div className="flex overflow-x-auto scrollbar-hide space-x-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+            {[
+              { id: 'overview', icon: Home, label: 'Overview' },
+              { id: 'transactions', icon: Receipt, label: 'Transactions' },
+              { id: 'accounts', icon: Wallet, label: 'Accounts' },
+              { id: 'budgets', icon: Target, label: 'Budgets' },
+              { id: 'insights', icon: Brain, label: 'Insights' }
+            ].map(tab => (
               <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`flex-1 py-2 px-4 rounded-md transition-colors capitalize ${
-                  activeTab === tab
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center justify-center sm:justify-start space-x-1 sm:space-x-2 min-w-fit px-3 sm:px-4 py-2 rounded-md transition-colors ${
+                  activeTab === tab.id
                     ? 'bg-white dark:bg-gray-700 text-purple-600 dark:text-purple-400 shadow-sm'
                     : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
-                {tab}
+                <tab.icon className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
+                <span className="hidden sm:inline text-sm sm:text-base">{tab.label}</span>
               </button>
             ))}
           </div>
@@ -749,68 +1087,69 @@ function App() {
           {activeTab === 'overview' && (
             <div className="space-y-6">
               {/* Metrics Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 shadow-sm">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Net Worth</p>
-                      <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    <div className="flex-1">
+                      <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">Net Worth</p>
+                      <p className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white truncate">
                         {formatCurrency(financialMetrics.netWorth)}
                       </p>
                     </div>
-                    <Wallet className="w-8 h-8 text-purple-600 dark:text-purple-400" />
+                    <Wallet className="w-6 h-6 sm:w-8 sm:h-8 text-purple-600 dark:text-purple-400 flex-shrink-0 ml-2" />
                   </div>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 shadow-sm">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Monthly Income</p>
-                      <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                    <div className="flex-1">
+                      <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">Monthly Income</p>
+                      <p className="text-lg sm:text-2xl font-bold text-green-600 dark:text-green-400 truncate">
                         {formatCurrency(financialMetrics.monthlyIncome)}
                       </p>
                     </div>
-                    <TrendingUp className="w-8 h-8 text-green-600 dark:text-green-400" />
+                    <TrendingUp className="w-6 h-6 sm:w-8 sm:h-8 text-green-600 dark:text-green-400 flex-shrink-0 ml-2" />
                   </div>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 shadow-sm">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Monthly Expenses</p>
-                      <p className="text-2xl font-bold text-red-600 dark:text-red-400">
+                    <div className="flex-1">
+                      <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">Monthly Expenses</p>
+                      <p className="text-lg sm:text-2xl font-bold text-red-600 dark:text-red-400 truncate">
                         {formatCurrency(financialMetrics.monthlyExpenses)}
                       </p>
                     </div>
-                    <TrendingDown className="w-8 h-8 text-red-600 dark:text-red-400" />
+                    <TrendingDown className="w-6 h-6 sm:w-8 sm:h-8 text-red-600 dark:text-red-400 flex-shrink-0 ml-2" />
                   </div>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 shadow-sm">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Savings Rate</p>
-                      <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                    <div className="flex-1">
+                      <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">Savings Rate</p>
+                      <p className="text-lg sm:text-2xl font-bold text-blue-600 dark:text-blue-400">
                         {financialMetrics.savingsRate.toFixed(1)}%
                       </p>
                     </div>
-                    <PiggyBank className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+                    <PiggyBank className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 dark:text-blue-400 flex-shrink-0 ml-2" />
                   </div>
                 </div>
               </div>
 
               {/* Charts */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Spending by Category</h3>
-                  <ResponsiveContainer width="100%" height={300}>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 shadow-sm">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">Spending by Category</h3>
+                  <div className="h-64 sm:h-72 lg:h-80">
+                  <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
                         data={spendingByCategoryData}
                         cx="50%"
                         cy="50%"
                         labelLine={false}
-                        label={(entry) => `${entry.name}: $${entry.value}`}
+                        label={(entry) => `${entry.name}: ${formatCurrency(entry.value)}`}
                         outerRadius={80}
                         fill="#8884d8"
                         dataKey="value"
@@ -819,22 +1158,25 @@ function App() {
                           <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip />
+                      <Tooltip formatter={(value) => formatCurrency(value)} />
                     </PieChart>
                   </ResponsiveContainer>
+                  </div>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Monthly Spending Trend</h3>
-                  <ResponsiveContainer width="100%" height={300}>
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 shadow-sm">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">Monthly Spending Trend</h3>
+                  <div className="h-64 sm:h-72 lg:h-80">
+                  <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={monthlySpendingData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                       <XAxis dataKey="month" stroke="#6b7280" />
-                      <YAxis stroke="#6b7280" />
-                      <Tooltip />
+                      <YAxis stroke="#6b7280" tickFormatter={(value) => formatCurrency(value)} />
+                      <Tooltip formatter={(value) => formatCurrency(value)} />
                       <Bar dataKey="amount" fill="#ec4899" radius={[8, 8, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
+                  </div>
                 </div>
               </div>
             </div>
@@ -853,29 +1195,66 @@ function App() {
                   <span>Add</span>
                 </button>
               </div>
-              <div className="space-y-2">
-                {sortedTransactions.slice(0, 10).map((t) => (
-                  <div key={t.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <div>
-                      <p className="font-medium text-gray-900 dark:text-white">{t.description}</p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {new Date(t.date).toLocaleDateString()} • {t.category || t.incomeSource}
-                      </p>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <span className={`font-bold ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                        {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
-                      </span>
-                      <button
-                        onClick={() => handleDeleteTransaction(t)}
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {sortedTransactions.length === 0 ? (
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                  <Receipt className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>No transactions yet</p>
+                  <p className="text-sm mt-1">Add your first transaction to get started</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {sortedTransactions.slice(0, 10).map((t) => {
+                    const account = accounts.find(acc => acc.id === t.account);
+                    return (
+                      <div key={t.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900 dark:text-white">{t.description}</p>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            {new Date(t.date).toLocaleDateString()} • {t.category || t.incomeSource}
+                            {account && ` • ${account.name}`}
+                          </p>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className={`font-bold ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                            {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                          </span>
+                          <button
+                            onClick={() => {
+                              setEditingTransaction(t);
+                              setTransactionForm({
+                                type: t.type,
+                                amount: t.amount.toString(),
+                                description: t.description,
+                                category: t.category || '',
+                                incomeSource: t.incomeSource || '',
+                                account: t.account,
+                                date: t.date
+                              });
+                              setShowTransactionForm(true);
+                            }}
+                            className="text-blue-500 hover:text-blue-700"
+                            title="Edit transaction"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTransaction(t)}
+                            className="text-red-500 hover:text-red-700"
+                            title="Delete transaction"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {sortedTransactions.length > 10 && (
+                    <p className="text-center text-sm text-gray-500 dark:text-gray-400 mt-4">
+                      Showing 10 of {sortedTransactions.length} transactions
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -891,17 +1270,61 @@ function App() {
                   <span>Add</span>
                 </button>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {accounts.map((account) => (
-                  <div key={account.id} className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
-                    <h3 className="font-semibold text-gray-900 dark:text-white">{account.name}</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 capitalize">{account.type}</p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white mt-2">
-                      {formatCurrency(account.balance)}
-                    </p>
-                  </div>
-                ))}
-              </div>
+              {accounts.length === 0 ? (
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-8 shadow-sm text-center">
+                  <Wallet className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                  <p className="text-gray-500 dark:text-gray-400">No accounts yet</p>
+                  <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Create your first account to start tracking finances</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {accounts.map((account) => {
+                    const accountTransactions = transactions.filter(t => t.account === account.id);
+                    const income = accountTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+                    const expenses = accountTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+                    
+                    return (
+                      <div key={account.id} className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow relative group">
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-gray-900 dark:text-white">{account.name}</h3>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 capitalize">{account.type}</p>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <CreditCard className="w-5 h-5 text-gray-400" />
+                            <button
+                              onClick={() => handleDeleteAccount(account.id)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded"
+                              title="Delete account"
+                            >
+                              <Trash2 className="w-4 h-4 text-red-500" />
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-2xl font-bold text-gray-900 dark:text-white mt-2">
+                          {formatCurrency(account.balance)}
+                        </p>
+                        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500 dark:text-gray-400">Income:</span>
+                            <span className="text-green-600 dark:text-green-400">+{formatCurrency(income)}</span>
+                          </div>
+                          <div className="flex justify-between mt-1 text-xs">
+                            <span className="text-gray-500 dark:text-gray-400">Expenses:</span>
+                            <span className="text-red-600 dark:text-red-400">-{formatCurrency(expenses)}</span>
+                          </div>
+                          <div className="flex justify-between mt-1 text-xs font-medium pt-1 border-t border-gray-100 dark:border-gray-700">
+                            <span className="text-gray-600 dark:text-gray-300">Net:</span>
+                            <span className={income - expenses >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                              {formatCurrency(income - expenses)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -917,7 +1340,7 @@ function App() {
                   <span>Save</span>
                 </button>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {EXPENSE_CATEGORIES.map((category) => (
                   <div key={category} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                     <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{category}</label>
@@ -960,11 +1383,28 @@ function App() {
 
           {/* Transaction Form Modal */}
           {showTransactionForm && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+              <div className="bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-xl p-4 sm:p-6 w-full sm:max-w-md max-h-[85vh] sm:max-h-[90vh] overflow-y-auto">
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Add Transaction</h3>
-                  <button onClick={() => setShowTransactionForm(false)} className="p-1">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    {editingTransaction ? 'Edit Transaction' : 'Add Transaction'}
+                  </h3>
+                  <button 
+                    onClick={() => {
+                      setShowTransactionForm(false);
+                      setEditingTransaction(null);
+                      setTransactionForm({
+                        type: 'expense',
+                        amount: '',
+                        description: '',
+                        category: '',
+                        incomeSource: '',
+                        account: '',
+                        date: new Date().toISOString().split('T')[0]
+                      });
+                    }} 
+                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                  >
                     <X className="w-5 h-5 text-gray-500" />
                   </button>
                 </div>
@@ -1061,7 +1501,7 @@ function App() {
                     disabled={loading}
                     className="w-full py-2 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg disabled:opacity-50"
                   >
-                    {loading ? 'Processing...' : 'Add Transaction'}
+                    {loading ? 'Processing...' : (editingTransaction ? 'Update Transaction' : 'Add Transaction')}
                   </button>
                 </form>
               </div>
@@ -1070,11 +1510,11 @@ function App() {
 
           {/* Account Form Modal */}
           {showAccountForm && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md">
+            <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+              <div className="bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-xl p-4 sm:p-6 w-full sm:max-w-md">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Add Account</h3>
-                  <button onClick={() => setShowAccountForm(false)} className="p-1">
+                  <button onClick={() => setShowAccountForm(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
                     <X className="w-5 h-5 text-gray-500" />
                   </button>
                 </div>
