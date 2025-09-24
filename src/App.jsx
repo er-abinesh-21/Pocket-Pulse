@@ -790,13 +790,8 @@ function App() {
 
   // Calculate financial metrics
   const financialMetrics = useMemo(() => {
-    // Calculate net worth based on actual transactions, not stored balance
-    const netWorth = accounts.reduce((sum, acc) => {
-      const accountTransactions = transactions.filter(t => t.account === acc.id);
-      const income = accountTransactions.filter(t => t.type === 'income').reduce((s, t) => s + (t.amount || 0), 0);
-      const expenses = accountTransactions.filter(t => t.type === 'expense').reduce((s, t) => s + (t.amount || 0), 0);
-      return sum + (income - expenses);
-    }, 0);
+    // Calculate net worth using stored account balances (which include initial balances)
+    const netWorth = accounts.reduce((sum, acc) => sum + (acc.balance || 0), 0);
     const now = new Date();
     const currentMonth = now.toISOString().substring(0, 7);
     const currentDate = now.toISOString().substring(0, 10);
@@ -1575,9 +1570,12 @@ function App() {
                     const accountTransactions = transactions.filter(t => t.account === account.id);
                     const income = accountTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
                     const expenses = accountTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
-                    // Use calculated balance based on transactions
-                    const calculatedBalance = income - expenses;
-                    const displayBalance = calculatedBalance; // Use calculated balance instead of account.balance
+                    
+                    // Use the stored balance which includes initial balance + all transaction effects
+                    const displayBalance = account.balance || 0;
+                    
+                    // The "Net" shown below is just income - expenses from transactions
+                    const transactionNet = income - expenses;
                     
                     return (
                       <div key={account.id} className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow relative group">
@@ -1594,7 +1592,7 @@ function App() {
                                 setAccountForm({
                                   name: account.name,
                                   type: account.type,
-                                  balance: calculatedBalance.toString() // Use calculated balance for edit form
+                                  balance: account.balance.toString() // Use stored balance for edit form
                                 });
                                 setShowAccountForm(true);
                               }}
@@ -1626,8 +1624,8 @@ function App() {
                           </div>
                           <div className="flex justify-between mt-1 text-xs font-medium pt-1 border-t border-gray-100 dark:border-gray-700">
                             <span className="text-gray-600 dark:text-gray-300">Net:</span>
-                            <span className={income - expenses >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                              {formatCurrency(income - expenses)}
+                            <span className={transactionNet >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                              {formatCurrency(transactionNet)}
                             </span>
                           </div>
                         </div>
