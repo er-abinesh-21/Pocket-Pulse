@@ -190,42 +190,6 @@ function App() {
   useEffect(() => {
     localStorage.setItem('currency', currency);
   }, [currency]);
-  
-  // Recalculate account balance based on transactions
-  const recalculateAccountBalance = (accountId, transactions, initialBalance = 0) => {
-    const accountTransactions = transactions.filter(t => t.account === accountId);
-    const income = accountTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
-    const expenses = accountTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
-    return initialBalance + income - expenses;
-  };
-
-  // Sync all account balances with calculated values
-  const syncAccountBalances = async () => {
-    if (!user || !db) {
-      showNotification('Please log in to sync balances', 'error');
-      return;
-    }
-    
-    setLoading(true);
-    try {
-      for (const account of accounts) {
-        const calculatedBalance = recalculateAccountBalance(account.id, transactions);
-        if (Math.abs(account.balance - calculatedBalance) > 0.01) { // Only update if different
-          await updateDoc(doc(db, `users/${user.uid}/accounts`, account.id), {
-            balance: calculatedBalance
-          });
-          console.log(`Synced ${account.name}: ${account.balance} -> ${calculatedBalance}`);
-        }
-      }
-      await loadUserData(user.uid);
-      showNotification('Account balances synced successfully!', 'success');
-    } catch (error) {
-      console.error('Error syncing balances:', error);
-      showNotification('Error syncing balances: ' + error.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // Load user data from Firestore
   const loadUserData = async (userId) => {
@@ -874,41 +838,56 @@ function App() {
   }, [transactions]);
 
   const monthlySpendingData = useMemo(() => {
-    const data = {};
-    const last12Months = [];
-    const monthNames = [];
     const now = new Date();
-
-    // Generate last 12 months
-    for (let i = 11; i >= 0; i--) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthKey = date.toISOString().substring(0, 7);
-      const monthName = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-      last12Months.push(monthKey);
-      monthNames.push(monthName);
-      data[monthKey] = { income: 0, expense: 0 };
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const currentMonthKey = now.toISOString().substring(0, 7);
+    
+    // Initialize data for each day of the current month
+    const dailyData = {};
+    const dayLabels = [];
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateKey = `${currentMonthKey}-${day.toString().padStart(2, '0')}`;
+      dailyData[dateKey] = { income: 0, expense: 0 };
+      dayLabels.push(day.toString());
     }
-
-    // Aggregate transactions by month
-    transactions.forEach(t => {
-      if (!t.date || !t.amount) return;
-      const monthKey = t.date.substring(0, 7);
-      if (data.hasOwnProperty(monthKey)) {
-        if (t.type === 'expense') {
-          data[monthKey].expense += t.amount;
-        } else if (t.type === 'income') {
-          data[monthKey].income += t.amount;
+    
+    // Aggregate transactions by day for current month
+    if (transactions && transactions.length > 0) {
+      transactions.forEach(t => {
+        if (!t.date || !t.amount) return;
+        
+        // Only process transactions from the current month
+        if (t.date.startsWith(currentMonthKey)) {
+          if (dailyData.hasOwnProperty(t.date)) {
+            if (t.type === 'expense') {
+              dailyData[t.date].expense += t.amount;
+            } else if (t.type === 'income') {
+              dailyData[t.date].income += t.amount;
+            }
+          }
         }
-      }
-    });
-
+      });
+    }
+    
     // Return formatted data for chart
-    return last12Months.map((month, index) => ({
-      month: monthNames[index],
-      expense: parseFloat(data[month].expense.toFixed(2)),
-      income: parseFloat(data[month].income.toFixed(2)),
-      net: parseFloat((data[month].income - data[month].expense).toFixed(2))
-    }));
+    const chartData = Object.keys(dailyData)
+      .sort()
+      .map((dateKey, index) => ({
+        day: dayLabels[index],
+        date: dateKey,
+        expense: parseFloat((dailyData[dateKey]?.expense || 0).toFixed(2)),
+        income: parseFloat((dailyData[dateKey]?.income || 0).toFixed(2)),
+        net: parseFloat(((dailyData[dateKey]?.income || 0) - (dailyData[dateKey]?.expense || 0)).toFixed(2))
+      }));
+    
+    // Debug log to check data
+    console.log('Daily Cash Flow Data for', currentMonthKey, ':', chartData);
+    console.log('Transactions count:', transactions?.length || 0);
+    
+    return chartData;
   }, [transactions]);
 
   // Sort transactions
@@ -1428,22 +1407,30 @@ function App() {
                 </div>
 
                 <div className="bg-white dark:bg-gray-800 rounded-xl p-4 sm:p-6 shadow-sm">
-                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">Monthly Cash Flow Trend</h3>
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                    Daily Cash Flow - {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                  </h3>
                   <div className="h-64 sm:h-72 lg:h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={monthlySpendingData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis dataKey="month" stroke="#6b7280" tick={{ fontSize: 12 }} />
-                      <YAxis stroke="#6b7280" tickFormatter={(value) => formatCurrency(value)} tick={{ fontSize: 12 }} />
-                      <Tooltip 
-                        formatter={(value) => formatCurrency(value)}
-                        contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #e5e7eb' }}
-                      />
-                      <Legend />
-                      <Bar dataKey="income" name="Income" fill="#10b981" radius={[8, 8, 0, 0]} />
-                      <Bar dataKey="expense" name="Expenses" fill="#ef4444" radius={[8, 8, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={monthlySpendingData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                        <XAxis 
+                          dataKey="day" 
+                          stroke="#6b7280" 
+                          tick={{ fontSize: 10 }}
+                          interval={Math.floor(monthlySpendingData.length / 15)} 
+                        />
+                        <YAxis stroke="#6b7280" tickFormatter={(value) => formatCurrency(value)} tick={{ fontSize: 12 }} />
+                        <Tooltip 
+                          formatter={(value) => formatCurrency(value)}
+                          contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #e5e7eb' }}
+                          labelFormatter={(label) => `Day ${label}`}
+                        />
+                        <Legend />
+                        <Bar dataKey="income" name="Income" fill="#10b981" radius={[8, 8, 0, 0]} />
+                        <Bar dataKey="expense" name="Expenses" fill="#ef4444" radius={[8, 8, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
                 </div>
               </div>
@@ -1538,25 +1525,13 @@ function App() {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">Accounts</h2>
-                <div className="flex space-x-2">
-                  {accounts.length > 0 && (
-                    <button
-                      onClick={syncAccountBalances}
-                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center space-x-2 text-sm"
-                      title="Sync balances with transactions"
-                    >
-                      <TrendingUp className="w-4 h-4" />
-                      <span className="hidden sm:inline">Sync Balances</span>
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setShowAccountForm(true)}
-                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg flex items-center space-x-2"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Add</span>
-                  </button>
-                </div>
+                <button
+                  onClick={() => setShowAccountForm(true)}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg flex items-center space-x-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add</span>
+                </button>
               </div>
               {accounts.length === 0 ? (
                 <div className="bg-white dark:bg-gray-800 rounded-xl p-8 shadow-sm text-center">
