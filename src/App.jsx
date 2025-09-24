@@ -32,7 +32,7 @@ import {
   Calendar, CalendarDays, DollarSign, TrendingUp, TrendingDown, CreditCard, PiggyBank,
   User, LogOut, Plus, Edit2, Trash2, Moon, Sun, Brain, Loader2,
   AlertCircle, CheckCircle, XCircle, ChevronDown, Wallet, Target,
-  Sparkles, Home, BarChart3, Receipt, X, Save, Chrome
+  Sparkles, Home, BarChart3, Receipt, X, Save, Chrome, HelpCircle, BookOpen
 } from 'lucide-react';
 
 // Firebase configuration from environment variables
@@ -1118,7 +1118,8 @@ function App() {
               { id: 'transactions', icon: Receipt, label: 'Transactions' },
               { id: 'accounts', icon: Wallet, label: 'Accounts' },
               { id: 'budgets', icon: Target, label: 'Budgets' },
-              { id: 'insights', icon: Brain, label: 'Insights' }
+              { id: 'insights', icon: Brain, label: 'Insights' },
+              { id: 'help', icon: HelpCircle, label: 'Help' }
             ].map(tab => (
               <button
                 key={tab.id}
@@ -1373,57 +1374,65 @@ function App() {
                   <p className="text-sm mt-1">Add your first transaction to get started</p>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {sortedTransactions.slice(0, 10).map((t) => {
-                    const account = accounts.find(acc => acc.id === t.account);
-                    return (
-                      <div key={t.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
-                        <div className="flex-1">
-                          <p className="font-medium text-gray-900 dark:text-white">{t.description}</p>
-                          <p className="text-sm text-gray-500 dark:text-gray-400">
-                            {new Date(t.date).toLocaleDateString()} • {t.category || t.incomeSource}
-                            {account && ` • ${account.name}`}
-                          </p>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <span className={`font-bold ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                            {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
-                          </span>
-                          <button
-                            onClick={() => {
-                              setEditingTransaction(t);
-                              setTransactionForm({
-                                type: t.type,
-                                amount: t.amount.toString(),
-                                description: t.description,
-                                category: t.category || '',
-                                incomeSource: t.incomeSource || '',
-                                account: t.account,
-                                date: t.date
-                              });
-                              setShowTransactionForm(true);
-                            }}
-                            className="text-blue-500 hover:text-blue-700"
-                            title="Edit transaction"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteTransaction(t)}
-                            className="text-red-500 hover:text-red-700"
-                            title="Delete transaction"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {sortedTransactions.length > 10 && (
-                    <p className="text-center text-sm text-gray-500 dark:text-gray-400 mt-4">
-                      Showing 10 of {sortedTransactions.length} transactions
+                <div>
+                  {/* Transaction Summary */}
+                  <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Total: <span className="font-semibold">{sortedTransactions.length}</span> transactions
+                      {sortedTransactions.length > 20 && (
+                        <span className="ml-2 text-xs">(Scroll to see all)</span>
+                      )}
                     </p>
-                  )}
+                  </div>
+                  
+                  {/* Transaction List with Scroll */}
+                  <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+                    {sortedTransactions.map((t) => {
+                      const account = accounts.find(acc => acc.id === t.account);
+                      return (
+                        <div key={t.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
+                          <div className="flex-1">
+                            <p className="font-medium text-gray-900 dark:text-white">{t.description}</p>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                              {new Date(t.date).toLocaleDateString()} • {t.category || t.incomeSource}
+                              {account && ` • ${account.name}`}
+                            </p>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className={`font-bold ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                              {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                            </span>
+                            <button
+                              onClick={() => {
+                                setEditingTransaction(t);
+                                setTransactionForm({
+                                  type: t.type,
+                                  amount: t.amount.toString(),
+                                  description: t.description,
+                                  category: t.category || '',
+                                  incomeSource: t.incomeSource || '',
+                                  account: t.account,
+                                  date: t.date
+                                });
+                                setShowTransactionForm(true);
+                              }}
+                              className="text-blue-500 hover:text-blue-700"
+                              title="Edit transaction"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTransaction(t)}
+                              className="text-red-500 hover:text-red-700"
+                              title="Delete transaction"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -1549,6 +1558,229 @@ function App() {
                   <p className="text-gray-500 dark:text-gray-400">Click "Generate" to get AI-powered financial advice</p>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Help Tab */}
+          {activeTab === 'help' && (
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-purple-500 to-indigo-600 rounded-xl p-6 text-white">
+                <div className="flex items-center space-x-3">
+                  <BookOpen className="w-8 h-8" />
+                  <div>
+                    <h2 className="text-2xl font-bold">PocketPulse Guide</h2>
+                    <p className="text-purple-100 mt-1">Learn how to use all features and understand your financial metrics</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Start Guide */}
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                  <Sparkles className="w-5 h-5 mr-2 text-yellow-500" />
+                  Quick Start Guide
+                </h3>
+                <div className="space-y-3 text-sm text-gray-600 dark:text-gray-300">
+                  <div className="flex items-start">
+                    <span className="bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded-full w-6 h-6 flex items-center justify-center flex-shrink-0 mt-0.5 mr-3 text-xs font-bold">1</span>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">Create Your Accounts</p>
+                      <p>Go to Accounts tab → Click "Add" → Enter account name, type, and current balance</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start">
+                    <span className="bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded-full w-6 h-6 flex items-center justify-center flex-shrink-0 mt-0.5 mr-3 text-xs font-bold">2</span>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">Add Transactions</p>
+                      <p>Go to Transactions tab → Click "Add" → Choose income/expense and fill details</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start">
+                    <span className="bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded-full w-6 h-6 flex items-center justify-center flex-shrink-0 mt-0.5 mr-3 text-xs font-bold">3</span>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">Set Budgets</p>
+                      <p>Go to Budgets tab → Enter monthly limits for each category → Click "Save"</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start">
+                    <span className="bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded-full w-6 h-6 flex items-center justify-center flex-shrink-0 mt-0.5 mr-3 text-xs font-bold">4</span>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">Monitor Overview</p>
+                      <p>Check your financial health, spending patterns, and insights on the Overview tab</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Understanding Metrics */}
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                  <BarChart3 className="w-5 h-5 mr-2 text-blue-500" />
+                  Understanding Your Metrics
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-3">
+                    <div className="border-l-4 border-purple-500 pl-4">
+                      <p className="font-medium text-gray-900 dark:text-white">Net Worth</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Total balance across all your accounts. Shows your overall financial position.</p>
+                    </div>
+                    <div className="border-l-4 border-green-500 pl-4">
+                      <p className="font-medium text-gray-900 dark:text-white">Savings Rate</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Percentage of income saved. Formula: (Income - Expenses) ÷ Income × 100</p>
+                    </div>
+                    <div className="border-l-4 border-orange-500 pl-4">
+                      <p className="font-medium text-gray-900 dark:text-white">Today's Expenses</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Total amount spent today. Compare with daily average to track spending habits.</p>
+                    </div>
+                    <div className="border-l-4 border-indigo-500 pl-4">
+                      <p className="font-medium text-gray-900 dark:text-white">This Week</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Total expenses from Monday to today. Helps track weekly spending patterns.</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="border-l-4 border-red-500 pl-4">
+                      <p className="font-medium text-gray-900 dark:text-white">Burn Rate</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Daily spending rate this month. Shows how fast you're spending money.</p>
+                    </div>
+                    <div className="border-l-4 border-emerald-500 pl-4">
+                      <p className="font-medium text-gray-900 dark:text-white">Budget Days Left</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Days until budget exhaustion at current spending rate. Helps pace spending.</p>
+                    </div>
+                    <div className="border-l-4 border-blue-500 pl-4">
+                      <p className="font-medium text-gray-900 dark:text-white">Daily Average</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Average daily spending over last 30 days. Baseline for comparison.</p>
+                    </div>
+                    <div className="border-l-4 border-amber-500 pl-4">
+                      <p className="font-medium text-gray-900 dark:text-white">Monthly Projection</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Expected monthly total based on current spending patterns.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Features Guide */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Account Types */}
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                    <Wallet className="w-5 h-5 mr-2 text-purple-500" />
+                    Account Types
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-start">
+                      <CreditCard className="w-4 h-4 mr-2 mt-0.5 text-gray-400" />
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-white">Checking</p>
+                        <p className="text-gray-600 dark:text-gray-400">Daily transaction account</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start">
+                      <PiggyBank className="w-4 h-4 mr-2 mt-0.5 text-gray-400" />
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-white">Savings</p>
+                        <p className="text-gray-600 dark:text-gray-400">Long-term savings account</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start">
+                      <CreditCard className="w-4 h-4 mr-2 mt-0.5 text-gray-400" />
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-white">Credit</p>
+                        <p className="text-gray-600 dark:text-gray-400">Credit card account (negative balance)</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start">
+                      <TrendingUp className="w-4 h-4 mr-2 mt-0.5 text-gray-400" />
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-white">Investment</p>
+                        <p className="text-gray-600 dark:text-gray-400">Investment portfolio account</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Transaction Categories */}
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                    <Receipt className="w-5 h-5 mr-2 text-green-500" />
+                    Categories & Sources
+                  </h3>
+                  <div className="space-y-3 text-sm">
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white mb-1">Expense Categories:</p>
+                      <p className="text-gray-600 dark:text-gray-400">Groceries, Rent, Utilities, Transportation, Entertainment, Healthcare, Education, Shopping, Dining, Other</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white mb-1">Income Sources:</p>
+                      <p className="text-gray-600 dark:text-gray-400">Salary, Freelance, Investment, Business, Other</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tips & Tricks */}
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl p-6 border border-blue-200 dark:border-blue-800">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                  <Sparkles className="w-5 h-5 mr-2 text-blue-500" />
+                  Pro Tips
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div className="space-y-2">
+                    <p className="flex items-start">
+                      <span className="text-blue-600 dark:text-blue-400 mr-2">💡</span>
+                      <span className="text-gray-700 dark:text-gray-300">Use the currency switcher in the header to view amounts in different currencies</span>
+                    </p>
+                    <p className="flex items-start">
+                      <span className="text-blue-600 dark:text-blue-400 mr-2">💡</span>
+                      <span className="text-gray-700 dark:text-gray-300">Click on any transaction to edit it quickly</span>
+                    </p>
+                    <p className="flex items-start">
+                      <span className="text-blue-600 dark:text-blue-400 mr-2">💡</span>
+                      <span className="text-gray-700 dark:text-gray-300">Set realistic budgets based on your spending history</span>
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="flex items-start">
+                      <span className="text-blue-600 dark:text-blue-400 mr-2">💡</span>
+                      <span className="text-gray-700 dark:text-gray-300">Use AI Insights for personalized financial advice</span>
+                    </p>
+                    <p className="flex items-start">
+                      <span className="text-blue-600 dark:text-blue-400 mr-2">💡</span>
+                      <span className="text-gray-700 dark:text-gray-300">Dark mode is available - click the moon/sun icon</span>
+                    </p>
+                    <p className="flex items-start">
+                      <span className="text-blue-600 dark:text-blue-400 mr-2">💡</span>
+                      <span className="text-gray-700 dark:text-gray-300">Hover over accounts to see the delete option</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Keyboard Shortcuts */}
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                  <span className="text-gray-500">⌨️</span>
+                  <span className="ml-2">Keyboard Shortcuts</span>
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                    <span className="text-gray-700 dark:text-gray-300">Toggle Dark Mode</span>
+                    <kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">Click Sun/Moon</kbd>
+                  </div>
+                  <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                    <span className="text-gray-700 dark:text-gray-300">Change Currency</span>
+                    <kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">Currency Dropdown</kbd>
+                  </div>
+                  <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                    <span className="text-gray-700 dark:text-gray-300">Add Transaction</span>
+                    <kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">Transactions → Add</kbd>
+                  </div>
+                  <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                    <span className="text-gray-700 dark:text-gray-300">Sign Out</span>
+                    <kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">Click Logout Icon</kbd>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
