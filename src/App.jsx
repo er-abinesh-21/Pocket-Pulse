@@ -190,12 +190,47 @@ function App() {
   useEffect(() => {
     localStorage.setItem('currency', currency);
   }, [currency]);
+  
+  // Recalculate account balance based on transactions
+  const recalculateAccountBalance = (accountId, transactions, initialBalance = 0) => {
+    const accountTransactions = transactions.filter(t => t.account === accountId);
+    const income = accountTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
+    const expenses = accountTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
+    return initialBalance + income - expenses;
+  };
+
+  // Sync all account balances with calculated values
+  const syncAccountBalances = async () => {
+    if (!user || !db) {
+      showNotification('Please log in to sync balances', 'error');
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      for (const account of accounts) {
+        const calculatedBalance = recalculateAccountBalance(account.id, transactions);
+        if (Math.abs(account.balance - calculatedBalance) > 0.01) { // Only update if different
+          await updateDoc(doc(db, `users/${user.uid}/accounts`, account.id), {
+            balance: calculatedBalance
+          });
+          console.log(`Synced ${account.name}: ${account.balance} -> ${calculatedBalance}`);
+        }
+      }
+      await loadUserData(user.uid);
+      showNotification('Account balances synced successfully!', 'success');
+    } catch (error) {
+      console.error('Error syncing balances:', error);
+      showNotification('Error syncing balances: ' + error.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Load user data from Firestore
   const loadUserData = async (userId) => {
     if (!db) {
       console.error('Firestore not initialized');
-      showNotification('Database connection error. Please check your configuration.', 'error');
       return;
     }
     
@@ -203,12 +238,11 @@ function App() {
     try {
       console.log('Loading data for user:', userId);
       
-      // Load accounts
+      // Load accounts - always get fresh data
       const accountsSnapshot = await getDocs(collection(db, `users/${userId}/accounts`));
       const accountsData = accountsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setAccounts(accountsData);
       console.log('Loaded accounts:', accountsData.length);
-
       // Load transactions with real-time updates
       const transactionsQuery = query(
         collection(db, `users/${userId}/transactions`),
@@ -511,31 +545,54 @@ function App() {
       };
 
       if (editingTransaction) {
-        // When editing, we need to reverse the old transaction's effect on balance
-        const oldAccount = accounts.find(acc => acc.id === editingTransaction.account);
-        if (oldAccount) {
-          const oldBalanceChange = editingTransaction.type === 'income' 
-            ? -editingTransaction.amount  // Reverse the income
-            : editingTransaction.amount;  // Reverse the expense
-          await updateDoc(doc(db, `users/${user.uid}/accounts`, oldAccount.id), {
-            balance: oldAccount.balance + oldBalanceChange
-          });
+        // When editing, we need to handle balance updates carefully
+        const oldAmount = editingTransaction.amount;
+        const newAmount = parseFloat(transactionForm.amount);
+        const oldType = editingTransaction.type;
+        const newType = transactionForm.type;
+        const oldAccountId = editingTransaction.account;
+        const newAccountId = transactionForm.account;
+        
+        // If the account changed, update both accounts
+        if (oldAccountId !== newAccountId) {
+          // Reverse the old transaction on the old account
+          const oldAccount = accounts.find(acc => acc.id === oldAccountId);
+          if (oldAccount) {
+            const reverseAmount = oldType === 'income' ? -oldAmount : oldAmount;
+            const newOldBalance = oldAccount.balance + reverseAmount;
+            await updateDoc(doc(db, `users/${user.uid}/accounts`, oldAccountId), {
+              balance: newOldBalance
+            });
+          }
+          
+          // Apply the new transaction to the new account
+          const newAccount = accounts.find(acc => acc.id === newAccountId);
+          if (newAccount) {
+            const applyAmount = newType === 'income' ? newAmount : -newAmount;
+            const newNewBalance = newAccount.balance + applyAmount;
+            await updateDoc(doc(db, `users/${user.uid}/accounts`, newAccountId), {
+              balance: newNewBalance
+            });
+          }
+        } else {
+          // Same account, just update the difference
+          const account = accounts.find(acc => acc.id === oldAccountId);
+          if (account) {
+            // Calculate the net change
+            const oldEffect = oldType === 'income' ? oldAmount : -oldAmount;
+            const newEffect = newType === 'income' ? newAmount : -newAmount;
+            const netChange = newEffect - oldEffect;
+            const newBalance = account.balance + netChange;
+            
+            await updateDoc(doc(db, `users/${user.uid}/accounts`, oldAccountId), {
+              balance: newBalance
+            });
+          }
         }
         
         // Update the transaction
         await updateDoc(doc(db, `users/${user.uid}/transactions`, editingTransaction.id), transactionData);
         showNotification('Transaction updated successfully!', 'success');
-        
-        // Apply the new transaction's effect on balance
-        const newAccount = accounts.find(acc => acc.id === transactionForm.account);
-        if (newAccount) {
-          const newBalanceChange = transactionForm.type === 'income' 
-            ? parseFloat(transactionForm.amount) 
-            : -parseFloat(transactionForm.amount);
-          await updateDoc(doc(db, `users/${user.uid}/accounts`, newAccount.id), {
-            balance: newAccount.balance + newBalanceChange
-          });
-        }
       } else {
         // Add new transaction
         await addDoc(collection(db, `users/${user.uid}/transactions`), transactionData);
@@ -547,8 +604,9 @@ function App() {
           const balanceChange = transactionForm.type === 'income' 
             ? parseFloat(transactionForm.amount) 
             : -parseFloat(transactionForm.amount);
+          const newBalance = account.balance + balanceChange;
           await updateDoc(doc(db, `users/${user.uid}/accounts`, account.id), {
-            balance: account.balance + balanceChange
+            balance: newBalance
           });
         }
       }
@@ -732,7 +790,13 @@ function App() {
 
   // Calculate financial metrics
   const financialMetrics = useMemo(() => {
-    const netWorth = accounts.reduce((sum, acc) => sum + (acc.balance || 0), 0);
+    // Calculate net worth based on actual transactions, not stored balance
+    const netWorth = accounts.reduce((sum, acc) => {
+      const accountTransactions = transactions.filter(t => t.account === acc.id);
+      const income = accountTransactions.filter(t => t.type === 'income').reduce((s, t) => s + (t.amount || 0), 0);
+      const expenses = accountTransactions.filter(t => t.type === 'expense').reduce((s, t) => s + (t.amount || 0), 0);
+      return sum + (income - expenses);
+    }, 0);
     const now = new Date();
     const currentMonth = now.toISOString().substring(0, 7);
     const currentDate = now.toISOString().substring(0, 10);
@@ -1479,13 +1543,25 @@ function App() {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">Accounts</h2>
-                <button
-                  onClick={() => setShowAccountForm(true)}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg flex items-center space-x-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add</span>
-                </button>
+                <div className="flex space-x-2">
+                  {accounts.length > 0 && (
+                    <button
+                      onClick={syncAccountBalances}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center space-x-2 text-sm"
+                      title="Sync balances with transactions"
+                    >
+                      <TrendingUp className="w-4 h-4" />
+                      <span className="hidden sm:inline">Sync Balances</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowAccountForm(true)}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg flex items-center space-x-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add</span>
+                  </button>
+                </div>
               </div>
               {accounts.length === 0 ? (
                 <div className="bg-white dark:bg-gray-800 rounded-xl p-8 shadow-sm text-center">
@@ -1497,8 +1573,11 @@ function App() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {accounts.map((account) => {
                     const accountTransactions = transactions.filter(t => t.account === account.id);
-                    const income = accountTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-                    const expenses = accountTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+                    const income = accountTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
+                    const expenses = accountTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
+                    // Use calculated balance based on transactions
+                    const calculatedBalance = income - expenses;
+                    const displayBalance = calculatedBalance; // Use calculated balance instead of account.balance
                     
                     return (
                       <div key={account.id} className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow relative group">
@@ -1515,7 +1594,7 @@ function App() {
                                 setAccountForm({
                                   name: account.name,
                                   type: account.type,
-                                  balance: account.balance.toString()
+                                  balance: calculatedBalance.toString() // Use calculated balance for edit form
                                 });
                                 setShowAccountForm(true);
                               }}
@@ -1534,7 +1613,7 @@ function App() {
                           </div>
                         </div>
                         <p className="text-2xl font-bold text-gray-900 dark:text-white mt-2">
-                          {formatCurrency(account.balance)}
+                          {formatCurrency(displayBalance)}
                         </p>
                         <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
                           <div className="flex justify-between text-xs">
