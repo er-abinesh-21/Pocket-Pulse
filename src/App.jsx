@@ -125,6 +125,7 @@ function App() {
   const [showAccountForm, setShowAccountForm] = useState(false);
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
+  const [editingAccount, setEditingAccount] = useState(null);
   const [accountForm, setAccountForm] = useState({ name: '', type: 'checking', balance: '' });
   const [transactionForm, setTransactionForm] = useState({
     type: 'expense',
@@ -373,22 +374,34 @@ function App() {
     
     setLoading(true);
     try {
-      const docRef = await addDoc(collection(db, `users/${user.uid}/accounts`), {
-        name: accountForm.name.trim(),
-        type: accountForm.type,
-        balance: balance,
-        createdAt: serverTimestamp()
-      });
-      
-      console.log('Account created with ID:', docRef.id);
+      if (editingAccount) {
+        // Update existing account
+        await updateDoc(doc(db, `users/${user.uid}/accounts`, editingAccount.id), {
+          name: accountForm.name.trim(),
+          type: accountForm.type,
+          balance: balance
+        });
+        console.log('Account updated:', editingAccount.id);
+        showNotification('Account updated successfully!', 'success');
+      } else {
+        // Add new account
+        const docRef = await addDoc(collection(db, `users/${user.uid}/accounts`), {
+          name: accountForm.name.trim(),
+          type: accountForm.type,
+          balance: balance,
+          createdAt: serverTimestamp()
+        });
+        console.log('Account created with ID:', docRef.id);
+        showNotification('Account added successfully!', 'success');
+      }
       
       await loadUserData(user.uid);
       setShowAccountForm(false);
+      setEditingAccount(null);
       setAccountForm({ name: '', type: 'checking', balance: '' });
-      showNotification('Account added successfully!', 'success');
     } catch (error) {
-      console.error('Error adding account:', error);
-      showNotification('Error adding account: ' + error.message, 'error');
+      console.error('Error saving account:', error);
+      showNotification('Error saving account: ' + error.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -498,22 +511,46 @@ function App() {
       };
 
       if (editingTransaction) {
+        // When editing, we need to reverse the old transaction's effect on balance
+        const oldAccount = accounts.find(acc => acc.id === editingTransaction.account);
+        if (oldAccount) {
+          const oldBalanceChange = editingTransaction.type === 'income' 
+            ? -editingTransaction.amount  // Reverse the income
+            : editingTransaction.amount;  // Reverse the expense
+          await updateDoc(doc(db, `users/${user.uid}/accounts`, oldAccount.id), {
+            balance: oldAccount.balance + oldBalanceChange
+          });
+        }
+        
+        // Update the transaction
         await updateDoc(doc(db, `users/${user.uid}/transactions`, editingTransaction.id), transactionData);
         showNotification('Transaction updated successfully!', 'success');
+        
+        // Apply the new transaction's effect on balance
+        const newAccount = accounts.find(acc => acc.id === transactionForm.account);
+        if (newAccount) {
+          const newBalanceChange = transactionForm.type === 'income' 
+            ? parseFloat(transactionForm.amount) 
+            : -parseFloat(transactionForm.amount);
+          await updateDoc(doc(db, `users/${user.uid}/accounts`, newAccount.id), {
+            balance: newAccount.balance + newBalanceChange
+          });
+        }
       } else {
+        // Add new transaction
         await addDoc(collection(db, `users/${user.uid}/transactions`), transactionData);
         showNotification('Transaction added successfully!', 'success');
-      }
-
-      // Update account balance
-      const account = accounts.find(acc => acc.id === transactionForm.account);
-      if (account) {
-        const balanceChange = transactionForm.type === 'income' 
-          ? parseFloat(transactionForm.amount) 
-          : -parseFloat(transactionForm.amount);
-        await updateDoc(doc(db, `users/${user.uid}/accounts`, account.id), {
-          balance: account.balance + balanceChange
-        });
+        
+        // Update account balance for new transaction
+        const account = accounts.find(acc => acc.id === transactionForm.account);
+        if (account) {
+          const balanceChange = transactionForm.type === 'income' 
+            ? parseFloat(transactionForm.amount) 
+            : -parseFloat(transactionForm.amount);
+          await updateDoc(doc(db, `users/${user.uid}/accounts`, account.id), {
+            balance: account.balance + balanceChange
+          });
+        }
       }
 
       await loadUserData(user.uid);
@@ -1473,6 +1510,21 @@ function App() {
                           <div className="flex items-center space-x-2">
                             <CreditCard className="w-5 h-5 text-gray-400" />
                             <button
+                              onClick={() => {
+                                setEditingAccount(account);
+                                setAccountForm({
+                                  name: account.name,
+                                  type: account.type,
+                                  balance: account.balance.toString()
+                                });
+                                setShowAccountForm(true);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-blue-100 dark:hover:bg-blue-900/20 rounded"
+                              title="Edit account"
+                            >
+                              <Edit2 className="w-4 h-4 text-blue-500" />
+                            </button>
+                            <button
                               onClick={() => handleDeleteAccount(account.id)}
                               className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded"
                               title="Delete account"
@@ -1916,8 +1968,17 @@ function App() {
             <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
               <div className="bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-xl p-4 sm:p-6 w-full sm:max-w-md">
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Add Account</h3>
-                  <button onClick={() => setShowAccountForm(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    {editingAccount ? 'Edit Account' : 'Add Account'}
+                  </h3>
+                  <button 
+                    onClick={() => {
+                      setShowAccountForm(false);
+                      setEditingAccount(null);
+                      setAccountForm({ name: '', type: 'checking', balance: '' });
+                    }} 
+                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                  >
                     <X className="w-5 h-5 text-gray-500" />
                   </button>
                 </div>
@@ -1946,7 +2007,7 @@ function App() {
                   <input
                     type="number"
                     step="0.01"
-                    placeholder="Initial Balance"
+                    placeholder={editingAccount ? "Current Balance" : "Initial Balance"}
                     value={accountForm.balance}
                     onChange={(e) => setAccountForm({ ...accountForm, balance: e.target.value })}
                     className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:text-white"
@@ -1956,9 +2017,14 @@ function App() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full py-2 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg disabled:opacity-50"
+                    className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg flex items-center justify-center space-x-2 disabled:opacity-50"
                   >
-                    {loading ? 'Processing...' : 'Add Account'}
+                    {loading ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Save className="w-5 h-5" />
+                    )}
+                    <span>{loading ? 'Saving...' : (editingAccount ? 'Update Account' : 'Save Account')}</span>
                   </button>
                 </form>
               </div>
