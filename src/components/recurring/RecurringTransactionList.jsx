@@ -79,16 +79,17 @@ export const RecurringTransactionList = ({
                         </div>
 
                         {/* Right: Actions */}
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center justify-end sm:justify-start space-x-2 w-full sm:w-auto">
                             {recurring.isActive ? (
                                 <Button
                                     variant="outline"
                                     size="sm"
                                     onClick={() => onPause(recurring.id)}
                                     icon={Pause}
-                                    className="text-orange-600 hover:text-orange-700"
+                                    className="text-orange-600 hover:text-orange-700 touch-manipulation"
                                 >
-                                    Pause
+                                    <span className="hidden sm:inline">Pause</span>
+                                    <span className="sm:hidden">Pause</span>
                                 </Button>
                             ) : (
                                 <Button
@@ -96,26 +97,27 @@ export const RecurringTransactionList = ({
                                     size="sm"
                                     onClick={() => onResume(recurring.id)}
                                     icon={Play}
-                                    className="text-green-600 hover:text-green-700"
+                                    className="text-green-600 hover:text-green-700 touch-manipulation"
                                 >
-                                    Resume
+                                    <span className="hidden sm:inline">Resume</span>
+                                    <span className="sm:hidden">Resume</span>
                                 </Button>
                             )}
 
                             <button
                                 onClick={() => onEdit(recurring)}
-                                className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                className="p-2 sm:p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors touch-manipulation"
                                 title="Edit"
                             >
-                                <Edit2 className="w-4 h-4" />
+                                <Edit2 className="w-5 h-5 sm:w-4 sm:h-4" />
                             </button>
 
                             <button
                                 onClick={() => onDelete(recurring.id)}
-                                className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                className="p-2 sm:p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors touch-manipulation"
                                 title="Delete"
                             >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="w-5 h-5 sm:w-4 sm:h-4" />
                             </button>
                         </div>
                     </div>

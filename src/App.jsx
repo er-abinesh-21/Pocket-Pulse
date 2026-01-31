@@ -1645,7 +1645,7 @@ function App() {
           {/* Other tabs - simplified for space */}
           {activeTab === 'transactions' && (
             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
-              <div className="flex justify-between items-center mb-4">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">Transactions</h2>
                 <div className="flex items-center space-x-2">
                   <ExportButton
@@ -1656,10 +1656,11 @@ function App() {
                   />
                   <button
                     onClick={() => setShowTransactionForm(true)}
-                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg flex items-center space-x-2"
+                    className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg flex items-center space-x-2 touch-manipulation"
                   >
                     <Plus className="w-4 h-4" />
-                    <span>Add</span>
+                    <span className="hidden sm:inline">Add</span>
+                    <span className="sm:hidden">Add Transaction</span>
                   </button>
                 </div>
               </div>
@@ -1706,51 +1707,53 @@ function App() {
                     {transactionsWithBalance.map((t) => {
                       const account = accounts.find(acc => acc.id === t.account);
                       return (
-                        <div key={t.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
+                        <div key={t.id} className="flex flex-col sm:flex-row sm:justify-between sm:items-center p-3 sm:p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors gap-2 sm:gap-0">
                           <div className="flex-1">
                             <p className="font-medium text-gray-900 dark:text-white">{t.description}</p>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
                               {new Date(t.date).toLocaleDateString()} • {t.category || t.incomeSource}
-                              {account && ` • ${account.name}`}
+                              <span className="hidden sm:inline">{account && ` • ${account.name}`}</span>
                             </p>
                           </div>
-                          <div className="flex items-center space-x-3">
+                          <div className="flex items-center justify-between sm:justify-end space-x-3 sm:space-x-4">
                             <span className={`font-bold ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
                               {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
                             </span>
                             {/* Balance Column */}
-                            <div className="text-right min-w-[120px] border-l border-gray-300 dark:border-gray-600 pl-3">
+                            <div className="text-right min-w-[100px] sm:min-w-[120px] border-l border-gray-300 dark:border-gray-600 pl-2 sm:pl-3">
                               <p className="text-xs text-gray-500 dark:text-gray-400">Bal. After</p>
                               <p className={`font-bold text-sm ${t.balanceAfter >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                                 {formatCurrency(t.balanceAfter)}
                               </p>
                             </div>
-                            <button
-                              onClick={() => {
-                                setEditingTransaction(t);
-                                setTransactionForm({
-                                  type: t.type,
-                                  amount: t.amount.toString(),
-                                  description: t.description,
-                                  category: t.category || '',
-                                  incomeSource: t.incomeSource || '',
-                                  account: t.account,
-                                  date: t.date
-                                });
-                                setShowTransactionForm(true);
-                              }}
-                              className="text-blue-500 hover:text-blue-700"
-                              title="Edit transaction"
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteTransaction(t)}
-                              className="text-red-500 hover:text-red-700"
-                              title="Delete transaction"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <div className="flex items-center space-x-2">
+                              <button
+                                onClick={() => {
+                                  setEditingTransaction(t);
+                                  setTransactionForm({
+                                    type: t.type,
+                                    amount: t.amount.toString(),
+                                    description: t.description,
+                                    category: t.category || '',
+                                    incomeSource: t.incomeSource || '',
+                                    account: t.account,
+                                    date: t.date
+                                  });
+                                  setShowTransactionForm(true);
+                                }}
+                                className="text-blue-500 hover:text-blue-700 p-2 sm:p-1 touch-manipulation"
+                                title="Edit transaction"
+                              >
+                                <Edit2 className="w-5 h-5 sm:w-4 sm:h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteTransaction(t)}
+                                className="text-red-500 hover:text-red-700 p-2 sm:p-1 touch-manipulation"
+                                title="Delete transaction"
+                              >
+                                <Trash2 className="w-5 h-5 sm:w-4 sm:h-4" />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );
@@ -1883,7 +1886,7 @@ function App() {
 
           {activeTab === 'recurring' && (
             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
-              <div className="flex justify-between items-center mb-6">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6">
                 <div>
                   <h2 className="text-xl font-bold text-gray-900 dark:text-white">Recurring Transactions</h2>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -1895,7 +1898,7 @@ function App() {
                     setEditingRecurring(null);
                     setShowRecurringForm(true);
                   }}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg flex items-center space-x-2"
+                  className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg flex items-center justify-center space-x-2 w-full sm:w-auto touch-manipulation"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Add Recurring</span>
