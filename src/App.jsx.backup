@@ -1,15 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { TransactionSearch, TransactionFilters, ExportButton } from './components/transactions';
+import { TransactionSearch, TransactionFilters } from './components/transactions';
 import { RecurringTransactionForm, RecurringTransactionList } from './components/recurring';
-import { LoanTracker, LoanForm, LoanPaymentForm } from './components/loans';
 import { useTransactionFilter } from './hooks/useTransactionFilter';
 import { useRecurringTransactions } from './hooks/useRecurringTransactions';
-import { useLoans } from './hooks/useLoans';
 import {
   createRecurringTransaction,
   updateRecurringTransaction
 } from './services/recurring.service';
-import { calculateRunningBalance } from './utils/balanceCalculations';
 import { initializeApp } from 'firebase/app';
 import {
   getAuth,
@@ -169,11 +166,6 @@ function App() {
   const [showRecurringForm, setShowRecurringForm] = useState(false);
   const [editingRecurring, setEditingRecurring] = useState(null);
 
-  // Loan states
-  const [showLoanForm, setShowLoanForm] = useState(false);
-  const [showLoanPaymentForm, setShowLoanPaymentForm] = useState(false);
-  const [selectedLoan, setSelectedLoan] = useState(null);
-
   // Currency configuration
   const currencies = {
     USD: { symbol: '$', name: 'US Dollar', locale: 'en-US' },
@@ -301,65 +293,8 @@ function App() {
     if (user) loadUserData(user.uid); // Reload to show new transaction
   });
 
-  // Use loans hook
-  const loansHook = useLoans(user?.uid);
-
   // Apply search and filters to transactions
   const filteredTransactions = useTransactionFilter(transactions, searchTerm, filters);
-
-  // Calculate running balance for transactions (per account)
-  const transactionsWithBalance = useMemo(() => {
-    if (filteredTransactions.length === 0) return [];
-
-    // Group transactions by account
-    const accountGroups = {};
-    filteredTransactions.forEach(t => {
-      if (!accountGroups[t.account]) {
-        accountGroups[t.account] = [];
-      }
-      accountGroups[t.account].push(t);
-    });
-
-    // Calculate balance for each account separately
-    const allTransactionsWithBalance = [];
-
-    Object.keys(accountGroups).forEach(accountId => {
-      const accountTransactions = accountGroups[accountId];
-      const account = accounts.find(a => a.id === accountId);
-      const currentAccountBalance = account ? account.balance : 0;
-
-      // Sort by date (newest first for processing)
-      const sorted = [...accountTransactions].sort((a, b) =>
-        new Date(b.date) - new Date(a.date)
-      );
-
-      // Start from current balance (for the newest transaction)
-      let runningBalance = currentAccountBalance;
-
-      // Process from newest to oldest
-      sorted.forEach((t, index) => {
-        // First transaction (newest) gets current balance
-        allTransactionsWithBalance.push({
-          ...t,
-          balanceAfter: runningBalance
-        });
-
-        // Calculate balance before this transaction (for next older transaction)
-        if (t.type === 'income' || t.type === 'loan') {
-          runningBalance -= t.amount; // Remove income to get previous balance
-        } else if (t.type === 'expense' || t.type === 'loan-payment') {
-          runningBalance += t.amount; // Add back expense to get previous balance
-        }
-      });
-    });
-
-    // Sort all transactions by date (newest first) for display
-    const result = allTransactionsWithBalance.sort((a, b) =>
-      new Date(b.date) - new Date(a.date)
-    );
-
-    return result;
-  }, [filteredTransactions, accounts]);
 
   // Authentication handlers
   const handleAuth = async (e) => {
@@ -845,45 +780,6 @@ function App() {
       showNotification('Recurring transaction deleted successfully!', 'success');
     } catch (error) {
       showNotification('Error deleting recurring transaction: ' + error.message, 'error');
-    }
-  };
-
-  // Loan handlers
-  const handleAddLoan = async (loanData) => {
-    if (!user) {
-      showNotification('Please log in to add loans', 'error');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await loansHook.addLoan(loanData);
-      showNotification('Loan added successfully!', 'success');
-      setShowLoanForm(false);
-    } catch (error) {
-      console.error('Error adding loan:', error);
-      showNotification('Error adding loan: ' + error.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleLoanPayment = async (loanId, amount, date) => {
-    if (!user) return;
-
-    setLoading(true);
-    try {
-      await loansHook.makePayment(loanId, amount, date);
-      showNotification('Payment recorded successfully!', 'success');
-      setShowLoanPaymentForm(false);
-      setSelectedLoan(null);
-      // Reload user data to update account balance
-      if (user) loadUserData(user.uid);
-    } catch (error) {
-      console.error('Error recording payment:', error);
-      showNotification('Error recording payment: ' + error.message, 'error');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -1527,19 +1423,6 @@ function App() {
                       Per day this month
                     </p>
                   </div>
-
-                  {/* Loan Tracker Widget */}
-                  <LoanTracker
-                    loans={loansHook.activeLoans}
-                    currency={currency}
-                    onAddLoan={() => setShowLoanForm(true)}
-                    onViewDetails={(loan) => {
-                      if (loan) {
-                        setSelectedLoan(loan);
-                        setShowLoanPaymentForm(true);
-                      }
-                    }}
-                  />
                 </div>
               </div>
 
@@ -1647,21 +1530,13 @@ function App() {
             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">Transactions</h2>
-                <div className="flex items-center space-x-2">
-                  <ExportButton
-                    transactions={transactionsWithBalance}
-                    accounts={accounts}
-                    currency={currency}
-                    dateRange={filters.dateFrom || filters.dateTo ? `${filters.dateFrom || 'All'} - ${filters.dateTo || 'Now'}` : 'All Time'}
-                  />
-                  <button
-                    onClick={() => setShowTransactionForm(true)}
-                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg flex items-center space-x-2"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Add</span>
-                  </button>
-                </div>
+                <button
+                  onClick={() => setShowTransactionForm(true)}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg flex items-center space-x-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add</span>
+                </button>
               </div>
 
               {/* Search and Filter */}
@@ -1703,7 +1578,7 @@ function App() {
 
                   {/* Transaction List with Scroll */}
                   <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
-                    {transactionsWithBalance.map((t) => {
+                    {filteredTransactions.map((t) => {
                       const account = accounts.find(acc => acc.id === t.account);
                       return (
                         <div key={t.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
@@ -1714,17 +1589,10 @@ function App() {
                               {account && ` • ${account.name}`}
                             </p>
                           </div>
-                          <div className="flex items-center space-x-3">
+                          <div className="flex items-center space-x-2">
                             <span className={`font-bold ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
                               {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
                             </span>
-                            {/* Balance Column */}
-                            <div className="text-right min-w-[120px] border-l border-gray-300 dark:border-gray-600 pl-3">
-                              <p className="text-xs text-gray-500 dark:text-gray-400">Bal. After</p>
-                              <p className={`font-bold text-sm ${t.balanceAfter >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                {formatCurrency(t.balanceAfter)}
-                              </p>
-                            </div>
                             <button
                               onClick={() => {
                                 setEditingTransaction(t);
@@ -2363,25 +2231,6 @@ function App() {
           )}
         </main>
       </div>
-
-      {/* Loan Form Modal */}
-      <LoanForm
-        isOpen={showLoanForm}
-        onClose={() => setShowLoanForm(false)}
-        onSubmit={handleAddLoan}
-        accounts={accounts}
-      />
-
-      {/* Loan Payment Form Modal */}
-      <LoanPaymentForm
-        isOpen={showLoanPaymentForm}
-        onClose={() => {
-          setShowLoanPaymentForm(false);
-          setSelectedLoan(null);
-        }}
-        onSubmit={handleLoanPayment}
-        loan={selectedLoan}
-      />
 
       {/* Recurring Transaction Form Modal */}
       <RecurringTransactionForm
