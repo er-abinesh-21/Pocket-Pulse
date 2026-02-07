@@ -3,14 +3,13 @@ import { Filter, X, ChevronDown } from 'lucide-react';
 import { Select } from '../shared/Select';
 import { Input } from '../shared/Input';
 import { Button } from '../shared/Button';
-import { EXPENSE_CATEGORIES } from '../../constants/categories';
 import { getCurrentDate } from '../../utils/dateHelpers';
 
 /**
  * Transaction Filters Component
  * Provides comprehensive filtering options for transactions
  */
-export const TransactionFilters = ({ accounts, onFilterChange, activeFilters }) => {
+export const TransactionFilters = ({ accounts, categories = [], onFilterChange, activeFilters }) => {
     const [showFilters, setShowFilters] = useState(false);
     const [filters, setFilters] = useState(activeFilters || {
         type: '',
@@ -92,9 +91,10 @@ export const TransactionFilters = ({ accounts, onFilterChange, activeFilters }) 
                         label="Category"
                         value={filters.category}
                         onChange={(e) => handleFilterChange('category', e.target.value)}
-                        options={EXPENSE_CATEGORIES}
+                        options={categories}
                         placeholder="All Categories"
                     />
+
 
                     {/* Account Filter */}
                     <Select

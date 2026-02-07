@@ -2,6 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { TransactionSearch, TransactionFilters, ExportButton } from './components/transactions';
 import { RecurringTransactionForm, RecurringTransactionList } from './components/recurring';
 import { LoanTracker, LoanForm, LoanPaymentForm } from './components/loans';
+import { BudgetCard, BudgetForm } from './components/budgets';
+import { CategoryInput } from './components/shared';
+
 import { useTransactionFilter } from './hooks/useTransactionFilter';
 import { useRecurringTransactions } from './hooks/useRecurringTransactions';
 import { useLoans } from './hooks/useLoans';
@@ -129,6 +132,7 @@ function App() {
   const [accounts, setAccounts] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [budgets, setBudgets] = useState({});
+  const [customCategories, setCustomCategories] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState('all');
   const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
 
@@ -174,6 +178,11 @@ function App() {
   const [showLoanPaymentForm, setShowLoanPaymentForm] = useState(false);
   const [selectedLoan, setSelectedLoan] = useState(null);
 
+  // Budget form states
+  const [showBudgetForm, setShowBudgetForm] = useState(false);
+  const [editingBudgetCategory, setEditingBudgetCategory] = useState(null);
+
+
   // Currency configuration
   const currencies = {
     USD: { symbol: '$', name: 'US Dollar', locale: 'en-US' },
@@ -184,6 +193,19 @@ function App() {
     CAD: { symbol: 'C$', name: 'Canadian Dollar', locale: 'en-CA' },
     AUD: { symbol: 'A$', name: 'Australian Dollar', locale: 'en-AU' }
   };
+
+  // Use recurring transactions hook
+  const {
+    recurringTransactions,
+    loading: recurringLoading,
+    refresh: refreshRecurringTransactions,
+    pause: pauseRecurring,
+    resume: resumeRecurring,
+    remove: removeRecurring
+  } = useRecurringTransactions(user?.uid, () => {
+    // Callback when auto-transaction is created
+    loadUserData(user?.uid);
+  });
 
   // Initialize auth listener
   useEffect(() => {
@@ -276,6 +298,16 @@ function App() {
       });
       setBudgets(budgetsData);
       setBudgetForm(budgetsData);
+
+      // Load custom categories
+      const categoriesSnapshot = await getDocs(collection(db, `users/${userId}/customCategories`));
+      const categoriesData = categoriesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setCustomCategories(categoriesData);
+      console.log('Loaded custom categories:', categoriesData.length);
+
     } catch (error) {
       showNotification('Error loading data: ' + error.message, 'error');
     } finally {
@@ -288,18 +320,6 @@ function App() {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 5000);
   };
-
-  // Use recurring transactions hook
-  const {
-    recurringTransactions,
-    loading: recurringLoading,
-    pause: pauseRecurring,
-    resume: resumeRecurring,
-    remove: deleteRecurring
-  } = useRecurringTransactions(user?.uid, (transaction) => {
-    showNotification(`Auto-created: ${transaction.description}`, 'success');
-    if (user) loadUserData(user.uid); // Reload to show new transaction
-  });
 
   // Use loans hook
   const loansHook = useLoans(user?.uid);
@@ -797,6 +817,116 @@ function App() {
     }
   };
 
+  // Budget form handler
+  const handleSaveBudgetFromForm = async (category, amount) => {
+    if (!user || !db) {
+      showNotification('Please log in to update budgets', 'error');
+      return;
+    }
+
+    try {
+      const updatedBudgetForm = { ...budgetForm };
+
+      if (amount === '' || amount === '0') {
+        // Remove budget
+        delete updatedBudgetForm[category];
+        const budgetRef = doc(db, `users/${user.uid}/budgets`, category);
+        try {
+          await deleteDoc(budgetRef);
+          showNotification(`Budget removed for ${category}`, 'success');
+        } catch (err) {
+          // Budget might not exist, ignore
+        }
+      } else {
+        // Update budget
+        updatedBudgetForm[category] = amount;
+        const limitValue = parseFloat(amount);
+        const budgetRef = doc(db, `users/${user.uid}/budgets`, category);
+        await setDoc(budgetRef, {
+          category,
+          limit: limitValue,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+        showNotification(`Budget updated for ${category}`, 'success');
+      }
+
+      setBudgetForm(updatedBudgetForm);
+      setBudgets(updatedBudgetForm);
+      setShowBudgetForm(false);
+      setEditingBudgetCategory(null);
+    } catch (error) {
+      console.error('Error updating budget:', error);
+      showNotification('Error updating budget: ' + error.message, 'error');
+    }
+  };
+
+  // Custom category management
+  const handleAddCustomCategory = async (categoryName) => {
+    if (!user || !db) {
+      showNotification('Please log in to add categories', 'error');
+      return;
+    }
+
+    const trimmedName = categoryName.trim();
+    if (!trimmedName) {
+      showNotification('Category name cannot be empty', 'error');
+      return;
+    }
+
+    // Check if category already exists (case-insensitive)
+    const allCategories = [...EXPENSE_CATEGORIES, ...customCategories.map(c => c.name)];
+    if (allCategories.some(cat => cat.toLowerCase() === trimmedName.toLowerCase())) {
+      showNotification('This category already exists', 'error');
+      return;
+    }
+
+    try {
+      const docRef = await addDoc(collection(db, `users/${user.uid}/customCategories`), {
+        name: trimmedName,
+        createdAt: serverTimestamp()
+      });
+
+      const newCategory = {
+        id: docRef.id,
+        name: trimmedName,
+        createdAt: new Date()
+      };
+
+      setCustomCategories([...customCategories, newCategory]);
+      showNotification(`Category "${trimmedName}" created successfully!`, 'success');
+      console.log('Custom category created:', trimmedName);
+    } catch (error) {
+      console.error('Error creating custom category:', error);
+      showNotification('Error creating category: ' + error.message, 'error');
+    }
+  };
+
+  const handleDeleteCustomCategory = async (categoryId, categoryName) => {
+    if (!user || !db) return;
+
+    // Check if category is used in any transactions
+    const usedInTransactions = transactions.some(t => t.category === categoryName);
+    if (usedInTransactions) {
+      showNotification(`Cannot delete "${categoryName}" - it's used in existing transactions`, 'error');
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to delete the category "${categoryName}"?`)) {
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, `users/${user.uid}/customCategories`, categoryId));
+      setCustomCategories(customCategories.filter(c => c.id !== categoryId));
+      showNotification(`Category "${categoryName}" deleted successfully`, 'success');
+    } catch (error) {
+      console.error('Error deleting custom category:', error);
+      showNotification('Error deleting category: ' + error.message, 'error');
+    }
+  };
+
+
+
   // Recurring transaction handlers
   const handleAddRecurring = async (recurringData) => {
     if (!user) {
@@ -807,6 +937,7 @@ function App() {
     setLoading(true);
     try {
       await createRecurringTransaction(user.uid, recurringData);
+      await refreshRecurringTransactions(); // Refresh the list
       showNotification('Recurring transaction created successfully!', 'success');
       setShowRecurringForm(false);
       setEditingRecurring(null);
@@ -824,6 +955,7 @@ function App() {
     setLoading(true);
     try {
       await updateRecurringTransaction(user.uid, editingRecurring.id, recurringData);
+      await refreshRecurringTransactions(); // Refresh the list
       showNotification('Recurring transaction updated successfully!', 'success');
       setShowRecurringForm(false);
       setEditingRecurring(null);
@@ -841,7 +973,7 @@ function App() {
     }
 
     try {
-      await deleteRecurring(recurringId);
+      await removeRecurring(recurringId);
       showNotification('Recurring transaction deleted successfully!', 'success');
     } catch (error) {
       showNotification('Error deleting recurring transaction: ' + error.message, 'error');
@@ -1117,12 +1249,19 @@ function App() {
     }));
   };
 
-  // Budget progress calculation
+  // Combine default and custom categories
+  const allExpenseCategories = useMemo(() => {
+    const customCategoryNames = customCategories.map(c => c.name);
+    return [...EXPENSE_CATEGORIES, ...customCategoryNames].sort();
+  }, [customCategories]);
+
+  // Budget progress calculation with spending by category
   const budgetProgress = useMemo(() => {
     const progress = {};
     const currentMonth = new Date().toISOString().substring(0, 7);
 
-    Object.entries(budgets).forEach(([category, limit]) => {
+    // Calculate spending for all expense categories (default + custom)
+    allExpenseCategories.forEach(category => {
       const spent = transactions
         .filter(t =>
           t.type === 'expense' &&
@@ -1131,15 +1270,18 @@ function App() {
         )
         .reduce((sum, t) => sum + t.amount, 0);
 
+      const limit = budgets[category] || 0;
+
       progress[category] = {
         spent,
         limit,
-        percentage: Math.min((spent / limit) * 100, 100)
+        percentage: limit > 0 ? Math.min((spent / limit) * 100, 100) : 0,
+        hasBudget: limit > 0
       };
     });
 
     return progress;
-  }, [budgets, transactions]);
+  }, [budgets, transactions, allExpenseCategories]);
 
   // Format currency
   const formatCurrency = (amount) => {
@@ -1670,6 +1812,7 @@ function App() {
                 <TransactionSearch onSearch={setSearchTerm} />
                 <TransactionFilters
                   accounts={accounts}
+                  categories={allExpenseCategories}
                   onFilterChange={setFilters}
                   activeFilters={filters}
                 />
@@ -1856,30 +1999,143 @@ function App() {
           )}
 
           {activeTab === 'budgets' && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Budgets</h2>
-                <button
-                  onClick={handleUpdateBudgets}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg flex items-center space-x-2"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>Save</span>
-                </button>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                {EXPENSE_CATEGORIES.map((category) => (
-                  <div key={category} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{category}</label>
-                    <input
-                      type="number"
-                      value={budgetForm[category] || ''}
-                      onChange={(e) => setBudgetForm({ ...budgetForm, [category]: e.target.value })}
-                      placeholder="0"
-                      className="w-24 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-600 dark:text-white text-right"
-                    />
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Budget Tracker</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                      Monitor your spending across categories
+                    </p>
                   </div>
-                ))}
+                </div>
+              </div>
+
+              {/* Budget Summary Cards */}
+              {Object.values(budgetProgress).some(p => p.hasBudget) && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Total Budgeted */}
+                  <div className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg p-4 border border-purple-200 dark:border-purple-700">
+                    <p className="text-xs font-medium text-purple-600 dark:text-purple-400">Total Budgeted</p>
+                    <p className="text-2xl font-bold text-purple-700 dark:text-purple-300 mt-1">
+                      {formatCurrency(Object.values(budgetProgress).reduce((sum, p) => sum + p.limit, 0))}
+                    </p>
+                    <p className="text-xs text-purple-600/70 dark:text-purple-400/70 mt-1">This month</p>
+                  </div>
+
+                  {/* Total Spent */}
+                  <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg p-4 border border-blue-200 dark:border-blue-700">
+                    <p className="text-xs font-medium text-blue-600 dark:text-blue-400">Total Spent</p>
+                    <p className="text-2xl font-bold text-blue-700 dark:text-blue-300 mt-1">
+                      {formatCurrency(Object.values(budgetProgress).reduce((sum, p) => sum + p.spent, 0))}
+                    </p>
+                    <p className="text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">Across all budgets</p>
+                  </div>
+
+                  {/* Categories Over Budget */}
+                  <div className="bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/20 dark:to-red-800/20 rounded-lg p-4 border border-red-200 dark:border-red-700">
+                    <p className="text-xs font-medium text-red-600 dark:text-red-400">Over Budget</p>
+                    <p className="text-2xl font-bold text-red-700 dark:text-red-300 mt-1">
+                      {Object.values(budgetProgress).filter(p => p.hasBudget && p.spent > p.limit).length}
+                    </p>
+                    <p className="text-xs text-red-600/70 dark:text-red-400/70 mt-1">
+                      {Object.values(budgetProgress).filter(p => p.hasBudget).length > 0
+                        ? `of ${Object.values(budgetProgress).filter(p => p.hasBudget).length} categories`
+                        : 'No budgets set'}
+                    </p>
+                  </div>
+
+                  {/* Overall Health */}
+                  <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/20 dark:to-emerald-800/20 rounded-lg p-4 border border-emerald-200 dark:border-emerald-700">
+                    <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Budget Health</p>
+                    <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300 mt-1">
+                      {(() => {
+                        const totalBudget = Object.values(budgetProgress).reduce((sum, p) => sum + p.limit, 0);
+                        const totalSpent = Object.values(budgetProgress).reduce((sum, p) => sum + p.spent, 0);
+                        const healthPercentage = totalBudget > 0 ? Math.max(0, 100 - (totalSpent / totalBudget * 100)) : 100;
+                        return `${healthPercentage.toFixed(0)}%`;
+                      })()}
+                    </p>
+                    <p className="text-xs text-emerald-600/70 dark:text-emerald-400/70 mt-1">Remaining capacity</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Budget Cards */}
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Category Budgets</h3>
+
+                {Object.values(budgetProgress).every(p => !p.hasBudget) ? (
+                  /* Empty State */
+                  <div className="text-center py-12">
+                    <Target className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">No Budgets Set</h3>
+                    <p className="text-gray-500 dark:text-gray-400 mb-6">
+                      Start tracking your spending by setting budgets for different categories
+                    </p>
+                    <button
+                      onClick={() => {
+                        setEditingBudgetCategory(EXPENSE_CATEGORIES[0]);
+                        setShowBudgetForm(true);
+                      }}
+                      className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg inline-flex items-center space-x-2"
+                    >
+                      <Plus className="w-5 h-5" />
+                      <span>Set Your First Budget</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {/* Show categories with budgets first */}
+                    {Object.entries(budgetProgress)
+                      .filter(([_, data]) => data.hasBudget)
+                      .sort((a, b) => b[1].percentage - a[1].percentage)
+                      .map(([category, data]) => (
+                        <BudgetCard
+                          key={category}
+                          category={category}
+                          budget={data.limit}
+                          spent={data.spent}
+                          currency={currency}
+                          onEdit={(cat, budget) => {
+                            setEditingBudgetCategory(cat);
+                            setShowBudgetForm(true);
+                          }}
+                        />
+                      ))}
+
+                    {/* Show ALL categories without budgets */}
+                    {Object.entries(budgetProgress)
+                      .filter(([_, data]) => !data.hasBudget)
+                      .sort((a, b) => b[1].spent - a[1].spent) // Sort by spending, highest first
+                      .map(([category, data]) => (
+                        <div
+                          key={category}
+                          className="bg-gray-50 dark:bg-gray-700/50 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4 flex flex-col items-center justify-center text-center hover:border-purple-400 dark:hover:border-purple-500 transition-colors cursor-pointer"
+                          onClick={() => {
+                            setEditingBudgetCategory(category);
+                            setShowBudgetForm(true);
+                          }}
+                        >
+                          <Target className="w-8 h-8 text-gray-400 mb-2" />
+                          <h4 className="font-medium text-gray-900 dark:text-white mb-1">{category}</h4>
+                          {data.spent > 0 ? (
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                              Spent: {formatCurrency(data.spent)}
+                            </p>
+                          ) : (
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                              No spending yet
+                            </p>
+                          )}
+                          <button className="text-sm text-purple-600 dark:text-purple-400 hover:underline">
+                            Set Budget
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1904,6 +2160,81 @@ function App() {
                   <span>Add Recurring</span>
                 </button>
               </div>
+
+              {/* Summary Statistics */}
+              {!recurringLoading && recurringTransactions.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                  {/* Monthly Income */}
+                  <div className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg p-4 border border-green-200 dark:border-green-700">
+                    <p className="text-xs font-medium text-green-600 dark:text-green-400">Monthly Income</p>
+                    <p className="text-2xl font-bold text-green-700 dark:text-green-300 mt-1">
+                      {formatCurrency(
+                        recurringTransactions
+                          .filter(r => r.type === 'income' && r.isActive)
+                          .reduce((sum, r) => {
+                            const multiplier = {
+                              'daily': 30,
+                              'weekly': 4.33,
+                              'monthly': 1,
+                              'yearly': 1 / 12
+                            }[r.frequency] || 1;
+                            return sum + (r.amount * multiplier);
+                          }, 0)
+                      )}
+                    </p>
+                    <p className="text-xs text-green-600/70 dark:text-green-400/70 mt-1">
+                      {recurringTransactions.filter(r => r.type === 'income' && r.isActive).length} active
+                    </p>
+                  </div>
+
+                  {/* Monthly Expenses */}
+                  <div className="bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/20 dark:to-red-800/20 rounded-lg p-4 border border-red-200 dark:border-red-700">
+                    <p className="text-xs font-medium text-red-600 dark:text-red-400">Monthly Expenses</p>
+                    <p className="text-2xl font-bold text-red-700 dark:text-red-300 mt-1">
+                      {formatCurrency(
+                        recurringTransactions
+                          .filter(r => r.type === 'expense' && r.isActive)
+                          .reduce((sum, r) => {
+                            const multiplier = {
+                              'daily': 30,
+                              'weekly': 4.33,
+                              'monthly': 1,
+                              'yearly': 1 / 12
+                            }[r.frequency] || 1;
+                            return sum + (r.amount * multiplier);
+                          }, 0)
+                      )}
+                    </p>
+                    <p className="text-xs text-red-600/70 dark:text-red-400/70 mt-1">
+                      {recurringTransactions.filter(r => r.type === 'expense' && r.isActive).length} active
+                    </p>
+                  </div>
+
+                  {/* Net Monthly */}
+                  <div className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg p-4 border border-purple-200 dark:border-purple-700">
+                    <p className="text-xs font-medium text-purple-600 dark:text-purple-400">Net Monthly</p>
+                    <p className="text-2xl font-bold text-purple-700 dark:text-purple-300 mt-1">
+                      {formatCurrency(
+                        recurringTransactions
+                          .filter(r => r.isActive)
+                          .reduce((sum, r) => {
+                            const multiplier = {
+                              'daily': 30,
+                              'weekly': 4.33,
+                              'monthly': 1,
+                              'yearly': 1 / 12
+                            }[r.frequency] || 1;
+                            const amount = r.amount * multiplier;
+                            return sum + (r.type === 'income' ? amount : -amount);
+                          }, 0)
+                      )}
+                    </p>
+                    <p className="text-xs text-purple-600/70 dark:text-purple-400/70 mt-1">
+                      {recurringTransactions.filter(r => r.isActive).length} total active
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {recurringLoading ? (
                 <div className="flex justify-center py-8">
@@ -2240,17 +2571,14 @@ function App() {
                   />
 
                   {transactionForm.type === 'expense' ? (
-                    <select
+                    <CategoryInput
                       value={transactionForm.category}
-                      onChange={(e) => setTransactionForm({ ...transactionForm, category: e.target.value })}
-                      className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:text-white"
+                      onChange={(category) => setTransactionForm({ ...transactionForm, category })}
+                      categories={allExpenseCategories}
+                      onAddCategory={handleAddCustomCategory}
+                      placeholder="Select or create category"
                       required
-                    >
-                      <option value="">Select category</option>
-                      {EXPENSE_CATEGORIES.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
+                    />
                   ) : (
                     <select
                       value={transactionForm.incomeSource}
@@ -2395,9 +2723,26 @@ function App() {
         }}
         onSubmit={editingRecurring ? handleEditRecurring : handleAddRecurring}
         accounts={accounts}
+        categories={allExpenseCategories}
+        onAddCategory={handleAddCustomCategory}
         initialData={editingRecurring}
       />
+
+      {/* Budget Form Modal */}
+      {showBudgetForm && editingBudgetCategory && (
+        <BudgetForm
+          category={editingBudgetCategory}
+          currentBudget={budgetForm[editingBudgetCategory] || ''}
+          currency={currency}
+          onSave={handleSaveBudgetFromForm}
+          onClose={() => {
+            setShowBudgetForm(false);
+            setEditingBudgetCategory(null);
+          }}
+        />
+      )}
     </div>
+
   );
 }
 

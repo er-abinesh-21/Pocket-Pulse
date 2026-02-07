@@ -112,11 +112,31 @@ export const validateTransactionForm = (formData) => {
 export const validateRecurringTransactionForm = (formData) => {
     const errors = {};
 
-    // First validate as regular transaction
-    const transactionValidation = validateTransactionForm(formData);
-    Object.assign(errors, transactionValidation.errors);
+    // Validate amount
+    if (!isValidAmount(formData.amount)) {
+        errors.amount = 'Please enter a valid amount';
+    }
 
-    // Additional recurring-specific validation
+    // Validate description
+    if (!isRequired(formData.description)) {
+        errors.description = 'Description is required';
+    }
+
+    // Validate account
+    if (!formData.account) {
+        errors.account = 'Please select an account';
+    }
+
+    // Validate category or income source
+    if (formData.type === 'expense' && !formData.category) {
+        errors.category = 'Please select a category';
+    }
+
+    if (formData.type === 'income' && !formData.incomeSource) {
+        errors.incomeSource = 'Please select an income source';
+    }
+
+    // Recurring-specific validation
     if (!formData.frequency) {
         errors.frequency = 'Please select a frequency';
     }

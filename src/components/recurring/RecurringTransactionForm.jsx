@@ -3,7 +3,8 @@ import { Modal } from '../shared/Modal';
 import { Input } from '../shared/Input';
 import { Select } from '../shared/Select';
 import { Button } from '../shared/Button';
-import { EXPENSE_CATEGORIES, INCOME_SOURCES } from '../../constants/categories';
+import { CategoryInput } from '../shared/CategoryInput';
+import { INCOME_SOURCES } from '../../constants/categories';
 import { FREQUENCIES } from '../../constants/frequencies';
 import { validateRecurringTransactionForm } from '../../utils/validators';
 import { calculateNextOccurrence, getCurrentDate } from '../../utils/dateHelpers';
@@ -18,6 +19,8 @@ export const RecurringTransactionForm = ({
     onClose,
     onSubmit,
     accounts,
+    categories = [],
+    onAddCategory,
     initialData = null
 }) => {
     const [formData, setFormData] = useState(initialData || {
@@ -93,8 +96,8 @@ export const RecurringTransactionForm = ({
                         type="button"
                         onClick={() => handleChange('type', 'expense')}
                         className={`flex-1 py-3 rounded-lg font-medium transition-colors ${formData.type === 'expense'
-                                ? 'bg-red-600 text-white'
-                                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                            ? 'bg-red-600 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                             }`}
                     >
                         Expense
@@ -103,8 +106,8 @@ export const RecurringTransactionForm = ({
                         type="button"
                         onClick={() => handleChange('type', 'income')}
                         className={`flex-1 py-3 rounded-lg font-medium transition-colors ${formData.type === 'income'
-                                ? 'bg-green-600 text-white'
-                                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                            ? 'bg-green-600 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                             }`}
                     >
                         Income
@@ -140,14 +143,22 @@ export const RecurringTransactionForm = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {/* Category or Income Source */}
                     {formData.type === 'expense' ? (
-                        <Select
-                            label="Category"
-                            value={formData.category}
-                            onChange={(e) => handleChange('category', e.target.value)}
-                            options={EXPENSE_CATEGORIES}
-                            required
-                            error={errors.category}
-                        />
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                Category <span className="text-red-500">*</span>
+                            </label>
+                            <CategoryInput
+                                value={formData.category}
+                                onChange={(category) => handleChange('category', category)}
+                                categories={categories}
+                                onAddCategory={onAddCategory}
+                                placeholder="Select or create category"
+                                required
+                            />
+                            {errors.category && (
+                                <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.category}</p>
+                            )}
+                        </div>
                     ) : (
                         <Select
                             label="Income Source"
