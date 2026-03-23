@@ -4,6 +4,8 @@ import { RecurringTransactionForm, RecurringTransactionList } from './components
 import { LoanTracker, LoanForm, LoanPaymentForm } from './components/loans';
 import { BudgetCard, BudgetForm } from './components/budgets';
 import { CategoryInput } from './components/shared';
+import { getDateRangeStart } from './utils/dateHelpers';
+import { EXPENSE_CATEGORIES, EXPENSE_CATEGORIES_DATA, getCategoryIcon } from './constants/categories';
 
 import { useTransactionFilter } from './hooks/useTransactionFilter';
 import { useRecurringTransactions } from './hooks/useRecurringTransactions';
@@ -33,6 +35,8 @@ import {
   getDocs,
   query,
   orderBy,
+  where,
+  limit,
   onSnapshot,
   serverTimestamp,
   setDoc
@@ -104,8 +108,7 @@ const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/
 // Color palette for charts
 const CHART_COLORS = ['#8B5CF6', '#EC4899', '#06B6D4', '#10B981', '#F59E0B', '#EF4444', '#3B82F6'];
 
-// Categories
-const EXPENSE_CATEGORIES = ['Groceries', 'Rent', 'Utilities', 'Transportation', 'Entertainment', 'Healthcare', 'Education', 'Shopping', 'Dining', 'Other'];
+// Categories (EXPENSE_CATEGORIES imported from constants/categories.js)
 const INCOME_SOURCES = ['Full-time Salary', 'Freelance', 'Consulting', 'Investment', 'Business', 'Rental Income', 'Other'];
 const ACCOUNT_TYPES = [
   { value: 'checking', label: 'Checking' },
@@ -135,6 +138,7 @@ function App() {
   const [customCategories, setCustomCategories] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState('all');
   const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
+  const [dateRange, setDateRange] = useState('7d');
 
   // Form states
   const [showAccountForm, setShowAccountForm] = useState(false);
@@ -245,6 +249,49 @@ function App() {
     localStorage.setItem('currency', currency);
   }, [currency]);
 
+  // Subscribe to transactions with date filtering and limits
+  useEffect(() => {
+    if (!user?.uid || !db) return;
+
+    const startDate = getDateRangeStart(dateRange);
+    const constraints = [orderBy('date', 'desc')];
+
+    if (startDate) {
+      constraints.push(where('date', '>=', startDate));
+      constraints.push(limit(50));
+    }
+
+    const transactionsQuery = query(
+      collection(db, `users/${user.uid}/transactions`),
+      ...constraints
+    );
+
+    const unsubscribe = onSnapshot(transactionsQuery,
+      (snapshot) => {
+        const transactionsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setTransactions(transactionsData);
+        console.log(`Loaded transactions (${dateRange}):`, transactionsData.length);
+      },
+      (error) => {
+        console.error('Firestore real-time listener error:', error);
+        console.error('Error code:', error.code);
+        console.error('Error message:', error.message);
+
+        if (error.code === 'permission-denied') {
+          showNotification('Permission denied. Please check Firestore security rules.', 'error');
+        } else if (error.code === 'unavailable') {
+          showNotification('Firestore is unavailable. Please check your internet connection.', 'error');
+        } else if (error.code === 'failed-precondition') {
+          showNotification('Firestore indexes may need to be created. Check the console for details.', 'error');
+        } else {
+          showNotification('Error loading transactions: ' + error.message, 'error');
+        }
+      }
+    );
+
+    return unsubscribe;
+  }, [user?.uid, dateRange]);
+
   // Load user data from Firestore
   const loadUserData = async (userId) => {
     if (!db) {
@@ -261,33 +308,7 @@ function App() {
       const accountsData = accountsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setAccounts(accountsData);
       console.log('Loaded accounts:', accountsData.length);
-      // Load transactions with real-time updates
-      const transactionsQuery = query(
-        collection(db, `users/${userId}/transactions`),
-        orderBy('date', 'desc')
-      );
-      const unsubscribe = onSnapshot(transactionsQuery,
-        (snapshot) => {
-          const transactionsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          setTransactions(transactionsData);
-          console.log('Loaded transactions:', transactionsData.length);
-        },
-        (error) => {
-          console.error('Firestore real-time listener error:', error);
-          console.error('Error code:', error.code);
-          console.error('Error message:', error.message);
-
-          if (error.code === 'permission-denied') {
-            showNotification('Permission denied. Please check Firestore security rules.', 'error');
-          } else if (error.code === 'unavailable') {
-            showNotification('Firestore is unavailable. Please check your internet connection.', 'error');
-          } else if (error.code === 'failed-precondition') {
-            showNotification('Firestore indexes may need to be created. Check the console for details.', 'error');
-          } else {
-            showNotification('Error loading transactions: ' + error.message, 'error');
-          }
-        }
-      );
+      // Transactions are now loaded in a separate useEffect with date filtering
 
       // Load budgets
       const budgetsSnapshot = await getDocs(collection(db, `users/${userId}/budgets`));
@@ -1807,6 +1828,28 @@ function App() {
                 </div>
               </div>
 
+              {/* Time Range Selector */}
+              <div className="flex flex-wrap gap-2 mb-4">
+                {[
+                  { value: '7d', label: 'Last 7 Days' },
+                  { value: '30d', label: 'Last 30 Days' },
+                  { value: 'thisMonth', label: 'This Month' },
+                  { value: 'all', label: 'All Time' }
+                ].map((range) => (
+                  <button
+                    key={range.value}
+                    onClick={() => setDateRange(range.value)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                      dateRange === range.value
+                        ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    {range.label}
+                  </button>
+                ))}
+              </div>
+
               {/* Search and Filter */}
               <div className="mb-4 space-y-4">
                 <TransactionSearch onSearch={setSearchTerm} />
@@ -1854,7 +1897,7 @@ function App() {
                           <div className="flex-1">
                             <p className="font-medium text-gray-900 dark:text-white">{t.description}</p>
                             <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
-                              {new Date(t.date).toLocaleDateString()} • {t.category || t.incomeSource}
+                              {new Date(t.date).toLocaleDateString()} • {t.type === 'expense' ? getCategoryIcon(t.category) + ' ' : ''}{t.category || t.incomeSource}
                               <span className="hidden sm:inline">{account && ` • ${account.name}`}</span>
                             </p>
                           </div>

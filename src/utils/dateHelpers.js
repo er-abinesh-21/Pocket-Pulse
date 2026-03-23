@@ -135,3 +135,30 @@ export const calculateNextOccurrence = (startDate, frequency, fromDate = new Dat
 
     return next;
 };
+
+/**
+ * Get the start date string for a given date range preset
+ * Used for Firestore query filtering
+ * @param {string} range - Range preset: '7d', '30d', 'thisMonth', 'all'
+ * @returns {string|null} Date string in YYYY-MM-DD format, or null for 'all'
+ */
+export const getDateRangeStart = (range) => {
+    const now = new Date();
+    switch (range) {
+        case '7d': {
+            const d = new Date(now);
+            d.setDate(d.getDate() - 7);
+            return d.toISOString().split('T')[0];
+        }
+        case '30d': {
+            const d = new Date(now);
+            d.setDate(d.getDate() - 30);
+            return d.toISOString().split('T')[0];
+        }
+        case 'thisMonth':
+            return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+        case 'all':
+        default:
+            return null;
+    }
+};
