@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { TransactionSearch, TransactionFilters, ExportButton } from './components/transactions';
 import { RecurringTransactionForm, RecurringTransactionList } from './components/recurring';
 import { LoanTracker, LoanForm, LoanPaymentForm } from './components/loans';
 import { BudgetCard, BudgetForm } from './components/budgets';
 import { CategoryInput } from './components/shared';
+import { CurrencyConverter } from './components/shared/CurrencyConverter';
 import { getDateRangeStart } from './utils/dateHelpers';
 import { EXPENSE_CATEGORIES, EXPENSE_CATEGORIES_DATA, getCategoryIcon } from './constants/categories';
+import { fetchExchangeRates, convertCurrency } from './utils/currency';
 
 import { useTransactionFilter } from './hooks/useTransactionFilter';
 import { useRecurringTransactions } from './hooks/useRecurringTransactions';
@@ -50,7 +52,8 @@ import {
   Calendar, CalendarDays, DollarSign, TrendingUp, TrendingDown, CreditCard, PiggyBank,
   User, LogOut, Plus, Edit2, Trash2, Moon, Sun, Brain, Loader2,
   AlertCircle, CheckCircle, XCircle, ChevronDown, Wallet, Target,
-  Sparkles, Home, BarChart3, Receipt, X, Save, Chrome, HelpCircle, BookOpen
+  Sparkles, Home, BarChart3, Receipt, X, Save, Chrome, HelpCircle, BookOpen,
+  ArrowRightLeft
 } from 'lucide-react';
 
 // Firebase configuration from environment variables
@@ -129,7 +132,10 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
-  const [currency, setCurrency] = useState(() => localStorage.getItem('currency') || 'USD');
+  const [currency, setCurrency] = useState(() => localStorage.getItem('currency') || 'INR');
+  const [baseCurrency] = useState('INR');
+  const [exchangeRates, setExchangeRates] = useState(null);
+  const [showConverter, setShowConverter] = useState(false);
 
   // Financial data states
   const [accounts, setAccounts] = useState([]);
@@ -244,10 +250,27 @@ function App() {
     }
   }, [darkMode]);
 
-  // Save currency preference
+  // Save currency preference and fetch exchange rates
   useEffect(() => {
     localStorage.setItem('currency', currency);
   }, [currency]);
+
+  // Fetch exchange rates when currency changes
+  useEffect(() => {
+    const loadRates = async () => {
+      if (baseCurrency !== currency) {
+        try {
+          const rates = await fetchExchangeRates(baseCurrency);
+          setExchangeRates(rates);
+        } catch (error) {
+          console.warn('Failed to fetch exchange rates:', error);
+        }
+      } else {
+        setExchangeRates(null);
+      }
+    };
+    loadRates();
+  }, [currency, baseCurrency]);
 
   // Subscribe to transactions with date filtering and limits
   useEffect(() => {
@@ -1304,13 +1327,18 @@ function App() {
     return progress;
   }, [budgets, transactions, allExpenseCategories]);
 
-  // Format currency
+  // Format currency with real conversion
   const formatCurrency = (amount) => {
     const currencyConfig = currencies[currency] || currencies.USD;
+    // Convert the amount if we're displaying in a different currency
+    let displayAmount = amount || 0;
+    if (currency !== baseCurrency && exchangeRates) {
+      displayAmount = convertCurrency(displayAmount, baseCurrency, currency, exchangeRates);
+    }
     return new Intl.NumberFormat(currencyConfig.locale, {
       style: 'currency',
       currency: currency
-    }).format(amount || 0);
+    }).format(displayAmount);
   };
 
   // Check Firebase configuration
@@ -1499,7 +1527,7 @@ function App() {
                   value={currency}
                   onChange={(e) => setCurrency(e.target.value)}
                   className="px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                  title="Select Currency"
+                  title="Select Currency — values will be converted using live exchange rates"
                 >
                   {Object.entries(currencies).map(([code, config]) => (
                     <option key={code} value={code}>
@@ -1507,6 +1535,15 @@ function App() {
                     </option>
                   ))}
                 </select>
+
+                {/* Currency Converter Button */}
+                <button
+                  onClick={() => setShowConverter(true)}
+                  className="p-1.5 sm:p-2 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-colors group"
+                  title="Open Currency Converter"
+                >
+                  <ArrowRightLeft className="w-4 h-4 sm:w-5 sm:h-5 text-purple-500 dark:text-purple-400 group-hover:scale-110 transition-transform" />
+                </button>
 
                 <div className="hidden sm:flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
                   <User className="w-4 h-4" />
@@ -2784,6 +2821,14 @@ function App() {
           }}
         />
       )}
+
+      {/* Currency Converter Modal */}
+      <CurrencyConverter
+        isOpen={showConverter}
+        onClose={() => setShowConverter(false)}
+        darkMode={darkMode}
+        baseCurrency={baseCurrency}
+      />
     </div>
 
   );
