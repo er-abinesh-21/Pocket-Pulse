@@ -104,9 +104,9 @@ try {
 // Initialize Google Auth Provider
 const googleProvider = new GoogleAuthProvider();
 
-// Gemini API configuration from environment variable
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent';
+// Groq API configuration from environment variable
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
+const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
 // Color palette for charts
 const CHART_COLORS = ['#8B5CF6', '#EC4899', '#06B6D4', '#10B981', '#F59E0B', '#EF4444', '#3B82F6'];
@@ -1063,10 +1063,16 @@ function App() {
     }
   };
 
-  // AI Suggestions
+  // AI Suggestions (powered by Groq / Llama 3.3 70B)
   const generateAISuggestions = async () => {
     if (!user || transactions.length === 0) {
       showNotification('No transaction data available for analysis', 'warning');
+      return;
+    }
+
+    if (!GROQ_API_KEY) {
+      showNotification('Please configure your Groq API key in .env', 'error');
+      setAiSuggestions('Please configure your Groq API key to get AI suggestions.');
       return;
     }
 
@@ -1089,34 +1095,50 @@ function App() {
 
       const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome * 100).toFixed(2) : 0;
 
-      const prompt = `
-        Analyze this financial data and provide personalized advice:
-        Total Income: $${totalIncome.toFixed(2)}
-        Total Expenses: $${totalExpenses.toFixed(2)}
-        Savings Rate: ${savingsRate}%
-        Top Spending Categories: ${Object.entries(categorySpending).slice(0, 5).map(([cat, amount]) => `${cat}: $${amount.toFixed(2)}`).join(', ')}
-        
-        Provide 3 specific ways to reduce spending and improve savings rate.
-      `;
+      const prompt = `Analyze this financial data and provide personalized advice:
+Total Income: ₹${totalIncome.toFixed(2)}
+Total Expenses: ₹${totalExpenses.toFixed(2)}
+Savings Rate: ${savingsRate}%
+Top Spending Categories: ${Object.entries(categorySpending).slice(0, 5).map(([cat, amount]) => `${cat}: ₹${amount.toFixed(2)}`).join(', ')}
 
-      const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+Provide 3 specific ways to reduce spending and improve savings rate. Keep the advice practical and actionable.`;
+
+      const response = await fetch(GROQ_API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${GROQ_API_KEY}`
+        },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 500 }
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a helpful personal finance advisor. Provide concise, actionable financial advice based on the user\'s spending data. Use INR (₹) for all currency references.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0.7,
+          max_tokens: 500
         })
       });
 
-      if (!response.ok) throw new Error('Failed to generate AI suggestions');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        console.error('Groq API error:', response.status, errorData);
+        throw new Error(errorData?.error?.message || `API error ${response.status}`);
+      }
 
       const data = await response.json();
-      const suggestions = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Unable to generate suggestions';
+      const suggestions = data.choices?.[0]?.message?.content || 'Unable to generate suggestions';
       setAiSuggestions(suggestions);
       showNotification('AI suggestions generated successfully!', 'success');
     } catch (error) {
       showNotification('Error generating AI suggestions: ' + error.message, 'error');
-      setAiSuggestions('Please configure your API key to get AI suggestions.');
+      setAiSuggestions('Failed to generate suggestions. Please check your API key and try again.');
     } finally {
       setAiLoading(false);
     }
