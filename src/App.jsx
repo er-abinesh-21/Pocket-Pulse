@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { TransactionSearch, TransactionFilters, ExportButton } from './components/transactions';
 import { RecurringTransactionForm, RecurringTransactionList } from './components/recurring';
 import { LoanTracker, LoanForm, LoanPaymentForm } from './components/loans';
@@ -101,6 +102,14 @@ try {
   console.error('Firebase initialization error:', error);
   console.error('Firebase Config:', firebaseConfig);
   // You can show a user-friendly error message here
+}
+
+if (Capacitor.isNativePlatform()) {
+  GoogleAuth.initialize({
+    clientId: '402156897153-rfi5jua09lo3pvkl6pt887tl6kqmk3k0.apps.googleusercontent.com',
+    scopes: ['profile', 'email'],
+    grantOfflineAccess: true,
+  });
 }
 
 // Initialize Google Auth Provider
