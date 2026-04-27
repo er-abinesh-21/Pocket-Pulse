@@ -7,6 +7,18 @@
       "scopes": ["profile", "email"],
       "serverClientId": "402156897153-rfi5jua09lo3pvkl6pt887tl6kqmk3k0.apps.googleusercontent.com",
       "forceCodeForRefreshToken": true
+    },
+    "SplashScreen": {
+      "launchShowDuration": 3000,
+      "launchAutoHide": true,
+      "backgroundColor": "#ffffffff",
+      "androidSplashResourceName": "splash",
+      "androidScaleType": "FIT_CENTER",
+      "showSpinner": true,
+      "androidSpinnerStyle": "large",
+      "spinnerColor": "#8B5CF6",
+      "splashFullScreen": true,
+      "splashImmersive": true
     }
   }
 }
