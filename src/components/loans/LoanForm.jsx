@@ -10,6 +10,7 @@ import { Button } from '../shared/Button';
  */
 export const LoanForm = ({ isOpen, onClose, onSubmit, accounts, initialData = null }) => {
     const [formData, setFormData] = useState(initialData || {
+        type: 'borrowed', // 'borrowed' (I get money from him) or 'lent' (He gets loan from me)
         name: '',
         lender: '',
         amount: '',
@@ -23,6 +24,7 @@ export const LoanForm = ({ isOpen, onClose, onSubmit, accounts, initialData = nu
         e.preventDefault();
 
         const loanData = {
+            type: formData.type,
             name: formData.name,
             lender: formData.lender,
             amount: parseFloat(formData.amount),
@@ -39,6 +41,7 @@ export const LoanForm = ({ isOpen, onClose, onSubmit, accounts, initialData = nu
 
     const handleClose = () => {
         setFormData({
+            type: 'borrowed',
             name: '',
             lender: '',
             amount: '',
@@ -53,6 +56,17 @@ export const LoanForm = ({ isOpen, onClose, onSubmit, accounts, initialData = nu
     return (
         <Modal isOpen={isOpen} onClose={handleClose} title={initialData ? 'Edit Loan' : 'Add New Loan'}>
             <form onSubmit={handleSubmit} className="space-y-4">
+                <Select
+                    label="Loan Direction"
+                    value={formData.type}
+                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                    options={[
+                        { value: 'borrowed', label: 'I am getting money (Borrowed)' },
+                        { value: 'lent', label: 'I am giving money (Lent)' }
+                    ]}
+                    required
+                />
+
                 <Input
                     label="Loan Name"
                     type="text"

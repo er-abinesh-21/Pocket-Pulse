@@ -9,7 +9,12 @@ import { formatCurrency } from '../../utils/currency';
  */
 export const LoanTracker = ({ loans, currency = 'USD', onViewDetails, onAddLoan }) => {
     const activeLoans = loans.filter(loan => loan.status === 'active');
-    const totalDebt = activeLoans.reduce((sum, loan) => sum + (loan.remainingAmount || 0), 0);
+    const totalDebt = activeLoans
+        .filter(l => l.type !== 'lent')
+        .reduce((sum, loan) => sum + (loan.remainingAmount || 0), 0);
+    const totalReceivable = activeLoans
+        .filter(l => l.type === 'lent')
+        .reduce((sum, loan) => sum + (loan.remainingAmount || 0), 0);
 
     if (activeLoans.length === 0) {
         return (
@@ -49,14 +54,19 @@ export const LoanTracker = ({ loans, currency = 'USD', onViewDetails, onAddLoan 
             </div>
 
             {/* Total Debt Summary */}
-            <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 mb-4">
-                <p className="text-sm text-orange-600 dark:text-orange-400 mb-1">Total Debt</p>
-                <p className="text-2xl font-bold text-orange-700 dark:text-orange-300">
-                    {formatCurrency(totalDebt, currency)}
-                </p>
-                <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
-                    {activeLoans.length} active loan{activeLoans.length !== 1 ? 's' : ''}
-                </p>
+            <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4">
+                    <p className="text-sm text-orange-600 dark:text-orange-400 mb-1">To Pay</p>
+                    <p className="text-xl font-bold text-orange-700 dark:text-orange-300">
+                        {formatCurrency(totalDebt, currency)}
+                    </p>
+                </div>
+                <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
+                    <p className="text-sm text-green-600 dark:text-green-400 mb-1">To Receive</p>
+                    <p className="text-xl font-bold text-green-700 dark:text-green-300">
+                        {formatCurrency(totalReceivable, currency)}
+                    </p>
+                </div>
             </div>
 
             {/* Loan List */}
@@ -76,14 +86,12 @@ export const LoanTracker = ({ loans, currency = 'USD', onViewDetails, onAddLoan 
                                     <p className="font-medium text-gray-900 dark:text-white text-sm">
                                         {loan.name}
                                     </p>
-                                    {loan.lender && (
-                                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                                            Lender: {loan.lender}
-                                        </p>
-                                    )}
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                        {loan.type === 'lent' ? 'Lent to: ' : 'Lender: '} {loan.lender || 'N/A'}
+                                    </p>
                                 </div>
                                 <div className="text-right">
-                                    <p className="text-sm font-semibold text-orange-600 dark:text-orange-400">
+                                    <p className={`text-sm font-semibold ${loan.type === 'lent' ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'}`}>
                                         {formatCurrency(loan.remainingAmount, currency)}
                                     </p>
                                     <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -96,7 +104,7 @@ export const LoanTracker = ({ loans, currency = 'USD', onViewDetails, onAddLoan 
                             <div className="mb-2">
                                 <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
                                     <div
-                                        className="bg-orange-500 h-1.5 rounded-full transition-all"
+                                        className={`${loan.type === 'lent' ? 'bg-green-500' : 'bg-orange-500'} h-1.5 rounded-full transition-all`}
                                         style={{ width: `${progress}%` }}
                                     />
                                 </div>

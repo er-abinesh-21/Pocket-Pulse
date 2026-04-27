@@ -789,6 +789,27 @@ function App() {
 
       await deleteDoc(doc(db, `users/${user.uid}/transactions`, transaction.id));
 
+      // If it is a loan payment, restore the loan's balance
+      if (transaction.loanId) {
+        try {
+          const loanDocRef = doc(db, `users/${user.uid}/loans`, transaction.loanId);
+          const loanSnapshot = await getDocs(collection(db, `users/${user.uid}/loans`));
+          const loanDoc = loanSnapshot.docs.find(doc => doc.id === transaction.loanId);
+          
+          if (loanDoc) {
+            const loanData = loanDoc.data();
+            const newRemainingAmount = loanData.remainingAmount + transaction.amount;
+            await updateDoc(loanDocRef, {
+                remainingAmount: newRemainingAmount,
+                status: newRemainingAmount > 0 ? 'active' : 'paid'
+            });
+            console.log('Restored loan balance for:', transaction.loanId);
+          }
+        } catch (loanError) {
+          console.error("Error restoring loan balance:", loanError);
+        }
+      }
+
       // Update account balance
       const account = accounts.find(acc => acc.id === transaction.account);
       if (account) {
@@ -1036,6 +1057,8 @@ function App() {
       await loansHook.addLoan(loanData);
       showNotification('Loan added successfully!', 'success');
       setShowLoanForm(false);
+      // Reload user data to update account balance
+      if (user) loadUserData(user.uid);
     } catch (error) {
       console.error('Error adding loan:', error);
       showNotification('Error adding loan: ' + error.message, 'error');
@@ -1058,6 +1081,25 @@ function App() {
     } catch (error) {
       console.error('Error recording payment:', error);
       showNotification('Error recording payment: ' + error.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteLoan = async (loanId) => {
+    if (!user) return;
+
+    setLoading(true);
+    try {
+      await loansHook.removeLoan(loanId);
+      showNotification('Loan deleted successfully!', 'success');
+      setShowLoanPaymentForm(false);
+      setSelectedLoan(null);
+      // Reload user data to update account balance and transactions
+      if (user) loadUserData(user.uid);
+    } catch (error) {
+      console.error('Error deleting loan:', error);
+      showNotification('Error deleting loan: ' + error.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -2813,6 +2855,7 @@ Provide 3 specific ways to reduce spending and improve savings rate. Keep the ad
           setSelectedLoan(null);
         }}
         onSubmit={handleLoanPayment}
+        onDelete={handleDeleteLoan}
         loan={selectedLoan}
       />
 

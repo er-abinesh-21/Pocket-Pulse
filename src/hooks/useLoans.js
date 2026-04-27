@@ -95,8 +95,9 @@ export const useLoans = (userId) => {
         }
     }, [userId, loadLoans]);
 
-    // Calculate total debt
-    const totalDebt = activeLoans.reduce((sum, loan) => sum + (loan.remainingAmount || 0), 0);
+    // Calculate total debt and total receivable
+    const totalDebt = activeLoans.filter(l => l.type !== 'lent').reduce((sum, loan) => sum + (loan.remainingAmount || 0), 0);
+    const totalReceivable = activeLoans.filter(l => l.type === 'lent').reduce((sum, loan) => sum + (loan.remainingAmount || 0), 0);
 
     // Load on mount
     useEffect(() => {
@@ -107,6 +108,7 @@ export const useLoans = (userId) => {
         loans,
         activeLoans,
         totalDebt,
+        totalReceivable,
         loading,
         error,
         addLoan,

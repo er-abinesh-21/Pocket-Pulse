@@ -19,10 +19,42 @@ export const createLoan = async (userId, loanData) => {
         ...loanData,
         createdAt: new Date().toISOString(),
         status: 'active',
-        remainingAmount: loanData.amount
+        remainingAmount: loanData.amount,
+        type: loanData.type || 'borrowed'
     };
 
     const docRef = await addDoc(collection(db, `users/${userId}/loans`), loan);
+
+    // Initial loan transaction
+    const transactionType = loan.type === 'lent' ? 'expense' : 'income';
+    const desc = loan.type === 'lent' 
+        ? `Lent to ${loan.lender || loan.name}`
+        : `Borrowed from ${loan.lender || loan.name}`;
+
+    await addDoc(collection(db, `users/${userId}/transactions`), {
+        type: transactionType,
+        amount: loan.amount,
+        description: desc,
+        loanId: docRef.id,
+        loanName: loan.name,
+        date: new Date().toISOString().split('T')[0],
+        account: loan.account || '',
+        category: 'Loan Initial'
+    });
+
+    if (loan.account) {
+        const accountRef = doc(db, `users/${userId}/accounts`, loan.account);
+        const accountsSnapshot = await getDocs(collection(db, `users/${userId}/accounts`));
+        const accountDoc = accountsSnapshot.docs.find(d => d.id === loan.account);
+        if (accountDoc) {
+            const accData = accountDoc.data();
+            const balanceChange = transactionType === 'income' ? loan.amount : -loan.amount;
+            await updateDoc(accountRef, {
+                balance: accData.balance + balanceChange
+            });
+        }
+    }
+
     return docRef.id;
 };
 
@@ -81,6 +113,41 @@ export const updateLoan = async (userId, loanId, updates) => {
 export const deleteLoan = async (userId, loanId) => {
     if (!db) throw new Error('Firestore not initialized');
 
+    // First delete all associated transactions and revert account balances
+    const transactionsQ = query(
+        collection(db, `users/${userId}/transactions`),
+        where('loanId', '==', loanId)
+    );
+    const transactionsSnapshot = await getDocs(transactionsQ);
+    
+    // Load accounts to update balances
+    const accountsRef = collection(db, `users/${userId}/accounts`);
+    const accountsSnapshot = await getDocs(accountsRef);
+    const accounts = accountsSnapshot.docs.reduce((acc, doc) => {
+        acc[doc.id] = { ref: doc.ref, data: doc.data() };
+        return acc;
+    }, {});
+
+    for (const txnDoc of transactionsSnapshot.docs) {
+        const txn = txnDoc.data();
+        
+        // Revert account balance
+        if (txn.account && accounts[txn.account]) {
+            const isIncome = txn.type === 'income';
+            const revertAmount = isIncome ? -txn.amount : txn.amount;
+            const newBalance = accounts[txn.account].data.balance + revertAmount;
+            
+            await updateDoc(accounts[txn.account].ref, {
+                balance: newBalance
+            });
+            accounts[txn.account].data.balance = newBalance; // update local reference for subsequent txns
+        }
+
+        // Delete the transaction
+        await deleteDoc(txnDoc.ref);
+    }
+
+    // Finally, delete the loan itself
     await deleteDoc(doc(db, `users/${userId}/loans`, loanId));
 };
 
@@ -115,16 +182,30 @@ export const recordLoanPayment = async (userId, loanId, amount, date) => {
     });
 
     // Create a transaction for the payment
-    await addDoc(collection(db, `users/${userId}/transactions`), {
-        type: 'loan-payment',
+    const docRef = await addDoc(collection(db, `users/${userId}/transactions`), {
+        type: loan.type === 'lent' ? 'income' : 'loan-payment',
         amount: amount,
-        description: `Payment for ${loan.name}`,
+        description: loan.type === 'lent' ? `Received payment from ${loan.lender || loan.name}` : `Payment for ${loan.name}`,
         loanId: loanId,
         loanName: loan.name,
         date: date,
         account: loan.account || '',
         category: 'Loan Payment'
     });
+
+    // We must also update the account's balance in Firestore
+    if (loan.account) {
+        const accountRef = doc(db, `users/${userId}/accounts`, loan.account);
+        const accountsSnapshot = await getDocs(collection(db, `users/${userId}/accounts`));
+        const accountDoc = accountsSnapshot.docs.find(doc => doc.id === loan.account);
+        if (accountDoc) {
+            const accData = accountDoc.data();
+            const balanceChange = loan.type === 'lent' ? amount : -amount;
+            await updateDoc(accountRef, {
+                balance: accData.balance + balanceChange
+            });
+        }
+    }
 };
 
 export default {

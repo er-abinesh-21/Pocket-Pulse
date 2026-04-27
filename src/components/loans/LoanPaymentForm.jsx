@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { Modal } from '../shared/Modal';
 import { Input } from '../shared/Input';
 import { Button } from '../shared/Button';
+import { Trash2 } from 'lucide-react';
 
 /**
  * Loan Payment Form Component
  * Form to record a payment towards a loan
  */
-export const LoanPaymentForm = ({ isOpen, onClose, onSubmit, loan }) => {
+export const LoanPaymentForm = ({ isOpen, onClose, onSubmit, onDelete, loan }) => {
     const [formData, setFormData] = useState({
         amount: '',
         date: new Date().toISOString().split('T')[0]
@@ -74,13 +75,32 @@ export const LoanPaymentForm = ({ isOpen, onClose, onSubmit, loan }) => {
                     required
                 />
 
-                <div className="flex justify-end space-x-3 pt-4">
-                    <Button type="button" variant="outline" onClick={handleClose}>
-                        Cancel
-                    </Button>
-                    <Button type="submit" variant="primary">
-                        Record Payment
-                    </Button>
+                <div className="flex justify-between items-center pt-4">
+                    <div>
+                        {onDelete && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (window.confirm('Are you sure you want to delete this loan? This will delete the loan record along with all associated payments and transactions, and restore the account balances.')) {
+                                        onDelete(loan.id);
+                                        handleClose();
+                                    }
+                                }}
+                                className="flex items-center space-x-1 px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-sm font-medium transition-colors"
+                            >
+                                <Trash2 className="w-4 h-4" />
+                                <span>Delete Loan</span>
+                            </button>
+                        )}
+                    </div>
+                    <div className="flex space-x-3">
+                        <Button type="button" variant="outline" onClick={handleClose}>
+                            Cancel
+                        </Button>
+                        <Button type="submit" variant="primary">
+                            Record Payment
+                        </Button>
+                    </div>
                 </div>
             </form>
         </Modal>
