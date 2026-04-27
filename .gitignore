@@ -33,6 +33,8 @@ yarn-error.log*
 # Firebase
 .firebase/
 .firebaserc
+google-services.json
+GoogleService-Info.plist
 
 # Netlify
 .netlify/

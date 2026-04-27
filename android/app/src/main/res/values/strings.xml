@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Pocket-Pulse</string>
+    <string name="title_activity_main">Pocket-Pulse</string>
+    <string name="package_name">com.zenocart.pocketpulse</string>
+    <string name="custom_url_scheme">com.zenocart.pocketpulse</string>
+    <string name="server_client_id">402156897153-rfi5jua09lo3pvkl6pt887tl6kqmk3k0.apps.googleusercontent.com</string>
+</resources>

@@ -25,8 +25,10 @@ import {
   signOut,
   onAuthStateChanged,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  signInWithCredential
 } from 'firebase/auth';
+import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
 import {
   getFirestore,
   collection,
@@ -477,7 +479,12 @@ function App() {
   const handleGoogleSignIn = async () => {
     setLoading(true);
     try {
-      const result = await signInWithPopup(auth, googleProvider);
+      // 1. Trigger the native Android Google selection prompt
+      const nativeGoogleUser = await GoogleAuth.signIn();
+
+      // 2. Pass that credential into Firebase
+      const credential = GoogleAuthProvider.credential(nativeGoogleUser.authentication.idToken);
+      const result = await signInWithCredential(auth, credential);
       const user = result.user;
 
       // Check if this is a new user and create initial data if needed
