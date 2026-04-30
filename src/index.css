@@ -217,12 +217,80 @@ html, body {
 }
 .animate-receipt-fall { animation: receipt-fall 750ms cubic-bezier(0.5, 0, 0.75, 0) both; }
 
-@keyframes receipt-crush {
-  0%   { transform: scale(1) rotate(0deg);    opacity: 1; }
-  40%  { transform: scale(0.7) rotate(-8deg); opacity: 0.9; }
-  100% { transform: scale(0.25) rotate(20deg); opacity: 0; }
+@keyframes receipt-crush-drop {
+  0%   { 
+    transform: translate(var(--crush-x, 0px), var(--crush-y, 0px)) scale(1.03) rotate(-3deg); 
+    clip-path: polygon(50% 0%, 75% 0%, 100% 0%, 100% 25%, 100% 50%, 100% 75%, 100% 100%, 75% 100%, 50% 100%, 25% 100%, 0% 100%, 0% 75%, 0% 50%, 0% 25%, 0% 0%, 25% 0%);
+    opacity: 1; 
+  }
+  40%  { 
+    transform: translate(var(--crush-x, 0px), var(--crush-y, 0px)) scale(0.5) rotate(-15deg); 
+    clip-path: polygon(50% 5%, 70% 2%, 90% 15%, 95% 30%, 98% 55%, 90% 75%, 95% 95%, 70% 88%, 45% 95%, 25% 98%, 15% 90%, 5% 70%, 12% 45%, 2% 25%, 10% 10%, 30% 5%);
+    opacity: 0.9; 
+  }
+  100% { 
+    transform: translate(var(--crush-x, 0px), var(--crush-y, 0px)) scale(0.1) rotate(90deg); 
+    clip-path: polygon(50% 5%, 65% 12%, 85% 15%, 92% 35%, 98% 55%, 88% 75%, 85% 90%, 65% 98%, 45% 95%, 25% 92%, 12% 85%, 5% 65%, 10% 45%, 2% 30%, 18% 15%, 35% 8%);
+    opacity: 0; 
+  }
 }
-.animate-receipt-crush { animation: receipt-crush 420ms cubic-bezier(0.4, 0, 0.2, 1) both; }
+.animate-receipt-crush-drop { 
+  animation: receipt-crush-drop 420ms cubic-bezier(0.4, 0, 0.2, 1) both; 
+}
+
+@keyframes receipt-crush-fly {
+  0%   { 
+    transform: translate(0px, 0px) scale(1) rotate(0deg); 
+    clip-path: polygon(50% 0%, 75% 0%, 100% 0%, 100% 25%, 100% 50%, 100% 75%, 100% 100%, 75% 100%, 50% 100%, 25% 100%, 0% 100%, 0% 75%, 0% 50%, 0% 25%, 0% 0%, 25% 0%);
+    filter: drop-shadow(0 25px 50px rgba(0,0,0,0.6));
+    opacity: 1; 
+  }
+  20%  { 
+    transform: translate(0px, -20px) scale(0.6) rotate(-15deg); 
+    clip-path: polygon(50% 5%, 70% 2%, 90% 15%, 95% 30%, 98% 55%, 90% 75%, 95% 95%, 70% 88%, 45% 95%, 25% 98%, 15% 90%, 5% 70%, 12% 45%, 2% 25%, 10% 10%, 30% 5%);
+    filter: drop-shadow(0 15px 25px rgba(0,0,0,0.5));
+    opacity: 1; 
+  }
+  50%  { 
+    transform: translate(calc(var(--crush-x, 0px) * 0.4), calc(var(--crush-y, 0px) * 0.4 - 120px)) scale(0.35) rotate(90deg); 
+    clip-path: polygon(50% 5%, 65% 12%, 85% 15%, 92% 35%, 98% 55%, 88% 75%, 85% 90%, 65% 98%, 45% 95%, 25% 92%, 12% 85%, 5% 65%, 10% 45%, 2% 30%, 18% 15%, 35% 8%);
+    filter: drop-shadow(0 5px 10px rgba(0,0,0,0.4));
+    opacity: 1; 
+  }
+  100% { 
+    transform: translate(var(--crush-x, 0px), var(--crush-y, 0px)) scale(0.1) rotate(270deg); 
+    clip-path: polygon(50% 5%, 65% 12%, 85% 15%, 92% 35%, 98% 55%, 88% 75%, 85% 90%, 65% 98%, 45% 95%, 25% 92%, 12% 85%, 5% 65%, 10% 45%, 2% 30%, 18% 15%, 35% 8%);
+    filter: drop-shadow(0 0px 0px rgba(0,0,0,0.2));
+    opacity: 0; 
+  }
+}
+.animate-receipt-crush-fly { 
+  animation: receipt-crush-fly 650ms cubic-bezier(0.3, 0.1, 0.3, 1) both; 
+}
+
+.animate-receipt-crush-fly::after,
+.animate-receipt-crush-drop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: 
+    linear-gradient(115deg, transparent 20%, rgba(0,0,0,0.6) 22%, rgba(255,255,255,0.8) 23%, transparent 26%),
+    linear-gradient(-45deg, transparent 35%, rgba(0,0,0,0.7) 37%, rgba(255,255,255,0.9) 39%, transparent 45%),
+    linear-gradient(65deg, transparent 55%, rgba(0,0,0,0.5) 57%, rgba(255,255,255,0.8) 59%, transparent 65%),
+    linear-gradient(-85deg, transparent 65%, rgba(0,0,0,0.8) 67%, rgba(255,255,255,1) 68%, transparent 75%),
+    linear-gradient(15deg, transparent 75%, rgba(0,0,0,0.6) 77%, rgba(255,255,255,0.9) 78%, transparent 85%),
+    radial-gradient(circle at 35% 35%, rgba(255,255,255,0.6) 0%, rgba(0,0,0,0.9) 80%, rgba(0,0,0,1) 100%);
+  opacity: 0;
+  animation: receipt-crush-shadow 650ms forwards;
+  pointer-events: none;
+  z-index: 10;
+  mix-blend-mode: hard-light;
+}
+@keyframes receipt-crush-shadow {
+  0% { opacity: 0; }
+  20% { opacity: 0.8; }
+  100% { opacity: 1; }
+}
 
 @keyframes snackbar-in {
   0% { opacity: 0; transform: translateY(20px); }

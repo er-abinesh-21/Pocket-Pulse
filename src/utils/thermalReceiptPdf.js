@@ -29,7 +29,7 @@ export const buildReceiptLines = (transaction, { accountName, currency = 'USD', 
     const amountStr = `${sign}${formatCurrencyForPDF(Math.abs(Number(transaction.amount) || 0), currency)}`;
     const generatedAt = new Date();
     const txDate = transaction.date ? formatDate(transaction.date) : '-';
-    const category = transaction.category || transaction.incomeSource || '-';
+    const category = isIncome ? (transaction.incomeSource || transaction.category || '-') : (transaction.category || '-');
 
     lines.push({ kind: 'header', text: 'POCKET PULSE', align: 'center' });
     lines.push({ kind: 'header', text: 'Personal Finance Receipt', align: 'center' });

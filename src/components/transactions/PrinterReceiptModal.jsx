@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Share2, Edit2, X, Printer, Scissors } from 'lucide-react';
+import { Share2, Edit2, X, Printer, Scissors, Trash2 } from 'lucide-react';
 import {
     buildReceiptLines,
     downloadThermalReceipt,
@@ -107,7 +107,8 @@ export const PrinterReceiptModal = ({
     const [done, setDone] = useState(false);
     const [cutting, setCutting] = useState(false);    // scissor traveling across the top
     const [torn, setTorn] = useState(false);          // paper falling away after the cut
-    const [crushing, setCrushing] = useState(false);  // dropped on the bin
+    const [crushing, setCrushing] = useState(false);  // 'drop' or 'fly' or false
+    const [autoDeleting, setAutoDeleting] = useState(false); // manual delete triggered
     const [shareStatus, setShareStatus] = useState(''); // '', 'copied', 'shared', 'failed'
     const [paperBits, setPaperBits] = useState([]);
     const [overBin, setOverBin] = useState(false);
@@ -139,6 +140,7 @@ export const PrinterReceiptModal = ({
         setCutting(false);
         setTorn(false);
         setCrushing(false);
+        setAutoDeleting(false);
         setShareStatus('');
         setPaperBits([]);
         setOverBin(false);
@@ -197,8 +199,55 @@ export const PrinterReceiptModal = ({
         setTimeout(() => setPaperBits([]), 800);
     };
 
+    const getBinVector = () => {
+        const binEl = document.getElementById('receipt-dustbin-target');
+        if (!binEl || !paperRef.current) return { dx: 0, dy: 0 };
+        const bRect = binEl.getBoundingClientRect();
+        const bCx = bRect.left + bRect.width / 2;
+        const bCy = bRect.top + bRect.height / 2;
+
+        let pCx, pCy;
+        if (dragOriginRef.current) {
+            pCx = dragOriginRef.current.cx;
+            pCy = dragOriginRef.current.cy;
+        } else {
+            const pRect = paperRef.current.getBoundingClientRect();
+            pCx = pRect.left + pRect.width / 2;
+            pCy = pRect.top + pRect.height / 2;
+        }
+        return { dx: bCx - pCx, dy: bCy - pCy };
+    };
+
+    const handleDeleteClick = () => {
+        if (!done || cutting || torn || crushing || autoDeleting) return;
+
+        setAutoDeleting(true);
+        if (sfx) sfx.play('pickup');
+
+        const vec = getBinVector();
+        setBinVector(vec);
+
+        setTimeout(() => {
+            if (sfx) sfx.play('crunch');
+            setCrushing('fly');
+            
+            // Wait for throw animation to almost reach the bin before spawning bits
+            setTimeout(() => {
+                const bRect = document.getElementById('receipt-dustbin-target')?.getBoundingClientRect();
+                if (bRect) spawnPaperBits(bRect);
+                else if (paperRef.current) spawnPaperBits(paperRef.current.getBoundingClientRect());
+                
+                // Then complete the deletion
+                setTimeout(() => {
+                    if (onDelete) onDelete(transaction);
+                    if (onClose) onClose();
+                }, 200);
+            }, 550); // 550ms into the 650ms fly animation
+        }, 300); // Wait for bin to slide in
+    };
+
     // ---- Long-press drag (only after printing finishes) ----
-    const dragDisabled = !done || cutting || torn || crushing;
+    const dragDisabled = !done || cutting || torn || crushing || autoDeleting;
 
     const { dragging, position, handlers } = useLongPressDrag({
         threshold: 350,
@@ -220,8 +269,14 @@ export const PrinterReceiptModal = ({
         onDrop: () => {
             if (overBinRef.current) {
                 if (sfx) sfx.play('crunch');
-                if (paperRef.current) spawnPaperBits(paperRef.current.getBoundingClientRect());
-                setCrushing(true);
+                const vec = getBinVector();
+                setBinVector(vec);
+                
+                const bRect = document.getElementById('receipt-dustbin-target')?.getBoundingClientRect();
+                if (bRect) spawnPaperBits(bRect);
+                else if (paperRef.current) spawnPaperBits(paperRef.current.getBoundingClientRect());
+                
+                setCrushing('drop');
                 // Wait for the crush keyframe to play before notifying the parent.
                 setTimeout(() => {
                     if (onDelete) onDelete(transaction);
@@ -337,9 +392,11 @@ export const PrinterReceiptModal = ({
     //  - while dragging  → none (transform driven by inline style)
     const paperAnimationClass = torn
         ? 'animate-receipt-fall'
-        : crushing
-            ? 'animate-receipt-crush'
-            : (!dragging && visibleCount > 0 ? 'animate-paper-roll' : '');
+        : crushing === 'drop'
+            ? 'animate-receipt-crush-drop'
+            : crushing === 'fly'
+                ? 'animate-receipt-crush-fly'
+                : (!dragging && visibleCount > 0 ? 'animate-paper-roll' : '');
 
     return (
         <div
@@ -399,6 +456,12 @@ export const PrinterReceiptModal = ({
                             style={{
                                 ...handlers.style,
                                 ...paperDragStyle,
+                                ...(crushing && binVector
+                                    ? {
+                                        '--crush-x': `${binVector.dx}px`,
+                                        '--crush-y': `${binVector.dy}px`
+                                    }
+                                    : {}),
                                 touchAction: dragging ? 'none' : 'pan-y',
                                 cursor: dragDisabled
                                     ? 'default'
@@ -466,7 +529,7 @@ export const PrinterReceiptModal = ({
 
                 {/* Action buttons (after printing completes; hidden while torn/crushing) */}
                 <div
-                    className={`mt-5 grid grid-cols-3 gap-2 w-[88%] max-w-xs transition-opacity duration-300 ${done && !torn && !crushing ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                    className={`mt-5 grid grid-cols-4 gap-2 w-[88%] max-w-xs transition-opacity duration-300 ${done && !torn && !crushing ? 'opacity-100' : 'opacity-0 pointer-events-none'
                         }`}
                 >
                     <button
@@ -503,14 +566,24 @@ export const PrinterReceiptModal = ({
                         <Edit2 className="w-4 h-4" />
                         Edit
                     </button>
+                    <button
+                        onClick={handleDeleteClick}
+                        className="flex flex-col items-center gap-1 px-3 py-2.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-semibold shadow-lg transition-colors"
+                        title="Delete transaction"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                        Delete
+                    </button>
                 </div>
             </div>
 
-            {/* Dustbin slides in only while the user is dragging the receipt */}
+            {/* Dustbin slides in only while the user is dragging the receipt or auto deleting */}
             <DustbinDropZone
                 active={dragging}
                 point={dragging ? position : null}
                 onHover={setOverBin}
+                forceActive={autoDeleting}
+                forceOpen={autoDeleting}
             />
 
             {/* Paper-bit particles after a successful drop in the bin */}

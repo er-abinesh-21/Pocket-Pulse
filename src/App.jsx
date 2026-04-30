@@ -15,7 +15,7 @@ import { BudgetCard, BudgetForm } from './components/budgets';
 import { CategoryInput } from './components/shared';
 import { CurrencyConverter } from './components/shared/CurrencyConverter';
 import { getDateRangeStart } from './utils/dateHelpers';
-import { EXPENSE_CATEGORIES, EXPENSE_CATEGORIES_DATA, getCategoryIcon } from './constants/categories';
+import { EXPENSE_CATEGORIES, EXPENSE_CATEGORIES_DATA, getCategoryIcon, INCOME_SOURCES } from './constants/categories';
 import { fetchExchangeRates, convertCurrency } from './utils/currency';
 
 import { useTransactionFilter } from './hooks/useTransactionFilter';
@@ -131,7 +131,7 @@ const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const CHART_COLORS = ['#8B5CF6', '#EC4899', '#06B6D4', '#10B981', '#F59E0B', '#EF4444', '#3B82F6'];
 
 // Categories (EXPENSE_CATEGORIES imported from constants/categories.js)
-const INCOME_SOURCES = ['Full-time Salary', 'Freelance', 'Consulting', 'Investment', 'Business', 'Rental Income', 'Other'];
+
 const ACCOUNT_TYPES = [
   { value: 'checking', label: 'Checking' },
   { value: 'savings', label: 'Savings' },
@@ -2890,7 +2890,7 @@ Provide 3 specific ways to reduce spending and improve savings rate. Keep the ad
                     >
                       <option value="">Select source</option>
                       {INCOME_SOURCES.map(source => (
-                        <option key={source} value={source}>{source}</option>
+                        <option key={source.name} value={source.name}>{source.name}</option>
                       ))}
                     </select>
                   )}

@@ -7,6 +7,16 @@ import React from 'react';
  * modal via `onOpen(transaction)`. The row is intentionally NOT draggable —
  * the drag-to-bin interaction lives on the printed receipt inside the modal.
  */
+import * as LucideIcons from 'lucide-react';
+import { getIncomeSourceDetails } from '../../constants/categories';
+
+const DynamicIcon = ({ name, color }) => {
+    if (!name) return null;
+    const pascalName = name.split('-').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('');
+    const IconComponent = LucideIcons[pascalName] || LucideIcons.DollarSign;
+    return <IconComponent size={14} color={color} className="inline-block mr-1 -mt-0.5" />;
+};
+
 export const TransactionRow = ({
     transaction,
     accountName,
@@ -22,6 +32,8 @@ export const TransactionRow = ({
     const handleClick = () => {
         if (onOpen) onOpen(t);
     };
+
+    const incomeDetails = isIncome ? getIncomeSourceDetails(t.incomeSource) : null;
 
     return (
         <div
@@ -40,9 +52,17 @@ export const TransactionRow = ({
                 <p className="font-medium text-gray-900 dark:text-white">{t.description}</p>
                 <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
                     {new Date(t.date).toLocaleDateString()} •{' '}
-                    {t.type === 'expense' ? `${getCategoryIcon(t.category)} ` : ''}
-                    {t.category || t.incomeSource}
-                    <span className="hidden sm:inline">{accountName ? ` • ${accountName}` : ''}</span>
+                    {t.type === 'expense' ? (
+                        <>{getCategoryIcon(t.category)} {t.category}</>
+                    ) : (
+                        <span style={{ color: incomeDetails?.color }}>
+                            <DynamicIcon name={incomeDetails?.icon} color={incomeDetails?.color} />
+                            {t.incomeSource}
+                        </span>
+                    )}
+                    <span className="hidden sm:inline text-gray-500 dark:text-gray-400">
+                        {accountName ? ` • ${accountName}` : ''}
+                    </span>
                 </p>
             </div>
             <div className="flex items-center justify-between sm:justify-end space-x-3 sm:space-x-4">

@@ -164,7 +164,7 @@ export const RecurringTransactionForm = ({
                             label="Income Source"
                             value={formData.incomeSource}
                             onChange={(e) => handleChange('incomeSource', e.target.value)}
-                            options={INCOME_SOURCES}
+                            options={INCOME_SOURCES.map(s => ({ value: s.name, label: s.name }))}
                             required
                             error={errors.incomeSource}
                         />

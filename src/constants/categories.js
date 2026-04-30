@@ -160,11 +160,29 @@ export const getGroupedCategories = () => {
 
 // Income sources
 export const INCOME_SOURCES = [
-  'Full-time Salary',
-  'Freelance',
-  'Consulting',
-  'Investment',
-  'Business',
-  'Rental Income',
-  'Other'
+  { name: "Full-time Salary", icon: "briefcase", color: "#4CAF50" },
+  { name: "Part-time Salary", icon: "user-check", color: "#66BB6A" },
+  { name: "Overtime Pay", icon: "clock", color: "#81C784" },
+  { name: "Tips", icon: "dollar-sign", color: "#A5D6A7" },
+  { name: "Incentives", icon: "target", color: "#43A047" },
+  { name: "Allowances", icon: "gift", color: "#2E7D32" },
+  { name: "Freelance Work", icon: "laptop", color: "#42A5F5" },
+  { name: "Online Earnings", icon: "globe", color: "#1E88E5" },
+  { name: "App/Website Revenue", icon: "smartphone", color: "#1565C0" },
+  { name: "Personal Business Revenue", icon: "building", color: "#FF9800" },
+  { name: "Rental Income", icon: "home", color: "#8D6E63" },
+  { name: "Bank Savings Interest", icon: "bank", color: "#26A69A" },
+  { name: "Pocket Money", icon: "wallet", color: "#BA68C8" },
+  { name: "Bonus", icon: "party-popper", color: "#AB47BC" },
+  { name: "Gifts", icon: "gift", color: "#CE93D8" },
+  { name: "Cashback", icon: "refresh-ccw", color: "#7E57C2" },
+  { name: "Pension", icon: "user", color: "#9575CD" },
+  { name: "Insurance Payout", icon: "shield", color: "#5E35B1" },
+  { name: "Other", icon: "circle-ellipsis", color: "#fd2525ff" }
 ];
+
+// Helper to get income source details (icon name and color)
+export const getIncomeSourceDetails = (sourceName) => {
+  const found = INCOME_SOURCES.find(s => s.name === sourceName);
+  return found ? found : { name: sourceName, icon: "dollar-sign", color: "#4CAF50" };
+};

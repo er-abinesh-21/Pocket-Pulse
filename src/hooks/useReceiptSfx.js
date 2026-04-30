@@ -15,9 +15,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 const STORAGE_KEY = 'sfxMuted';
 
 const SOUND_SOURCES = {
-    printer: '/sounds/printer.mp3',
-    tear: '/sounds/tear.mp3',
-    crunch: '/sounds/crunch.mp3'
+    printer: '/sounds/Receipt Printing Sound.mp3',
+    tear: '/sounds/Receipt Tear Sound.mp3',
+    crunch: '/sounds/Crush and Throw.mp3'
 };
 
 const HAPTIC_PATTERNS = {
