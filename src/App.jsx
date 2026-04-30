@@ -1,6 +1,14 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { TransactionSearch, TransactionFilters, ExportButton } from './components/transactions';
+import {
+  TransactionSearch,
+  TransactionFilters,
+  ExportButton,
+  TransactionRow,
+  PrinterReceiptModal
+} from './components/transactions';
+import { UndoSnackbar } from './components/shared/UndoSnackbar';
+import { useReceiptSfx } from './hooks/useReceiptSfx';
 import { RecurringTransactionForm, RecurringTransactionList } from './components/recurring';
 import { LoanTracker, LoanForm, LoanPaymentForm } from './components/loans';
 import { BudgetCard, BudgetForm } from './components/budgets';
@@ -56,7 +64,7 @@ import {
   User, LogOut, Plus, Edit2, Trash2, Moon, Sun, Brain, Loader2,
   AlertCircle, CheckCircle, XCircle, ChevronDown, Wallet, Target,
   Sparkles, Home, BarChart3, Receipt, X, Save, Chrome, HelpCircle, BookOpen,
-  ArrowRightLeft
+  ArrowRightLeft, Volume2, VolumeX
 } from 'lucide-react';
 
 // Firebase configuration from environment variables
@@ -202,6 +210,14 @@ function App() {
   // Budget form states
   const [showBudgetForm, setShowBudgetForm] = useState(false);
   const [editingBudgetCategory, setEditingBudgetCategory] = useState(null);
+
+  // Receipt / printer / undo states. Drag-to-bin lives entirely inside the
+  // PrinterReceiptModal; the parent only needs to know which transaction is
+  // being viewed and which (if any) is awaiting an Undo.
+  const [viewingTransaction, setViewingTransaction] = useState(null);
+  const [pendingUndo, setPendingUndo] = useState(null); // { transaction }
+  const undoTimeoutRef = useRef(null);
+  const sfx = useReceiptSfx();
 
 
   // Currency configuration
@@ -778,6 +794,156 @@ function App() {
     }
   };
 
+  // Internal: actually remove the transaction doc + reverse balance + handle loan link.
+  // Used by both the long-press drag-to-bin flow and the modal's Delete button.
+  const performTransactionDelete = async (transaction, { silent = false } = {}) => {
+    if (!user) {
+      if (!silent) showNotification('Please log in to delete a transaction', 'error');
+      return false;
+    }
+    if (!db) {
+      if (!silent) showNotification('Database not initialized', 'error');
+      return false;
+    }
+    if (!transaction || !transaction.id) {
+      if (!silent) showNotification('Invalid transaction', 'error');
+      return false;
+    }
+
+    try {
+      await deleteDoc(doc(db, `users/${user.uid}/transactions`, transaction.id));
+
+      if (transaction.loanId) {
+        try {
+          const loanDocRef = doc(db, `users/${user.uid}/loans`, transaction.loanId);
+          const loanSnapshot = await getDocs(collection(db, `users/${user.uid}/loans`));
+          const loanDoc = loanSnapshot.docs.find(d => d.id === transaction.loanId);
+          if (loanDoc) {
+            const loanData = loanDoc.data();
+            const newRemainingAmount = loanData.remainingAmount + transaction.amount;
+            await updateDoc(loanDocRef, {
+              remainingAmount: newRemainingAmount,
+              status: newRemainingAmount > 0 ? 'active' : 'paid'
+            });
+          }
+        } catch (loanError) {
+          console.error('Error restoring loan balance:', loanError);
+        }
+      }
+
+      const account = accounts.find(acc => acc.id === transaction.account);
+      if (account) {
+        const balanceChange = transaction.type === 'income' ? -transaction.amount : transaction.amount;
+        await updateDoc(doc(db, `users/${user.uid}/accounts`, account.id), {
+          balance: account.balance + balanceChange
+        });
+      }
+
+      await loadUserData(user.uid);
+      return true;
+    } catch (error) {
+      console.error('Error deleting transaction:', error);
+      if (!silent) showNotification('Error deleting transaction: ' + error.message, 'error');
+      return false;
+    }
+  };
+
+  // Re-create a transaction (used by Undo). Reverses balance the way handleAddTransaction does.
+  const restoreTransaction = async (transaction) => {
+    if (!user || !db || !transaction) return;
+    try {
+      const { id: _ignored, balanceAfter: _b, ...payload } = transaction;
+      await addDoc(collection(db, `users/${user.uid}/transactions`), {
+        ...payload,
+        createdAt: serverTimestamp()
+      });
+
+      const account = accounts.find(acc => acc.id === transaction.account);
+      if (account) {
+        const balanceChange = transaction.type === 'income' ? transaction.amount : -transaction.amount;
+        await updateDoc(doc(db, `users/${user.uid}/accounts`, account.id), {
+          balance: account.balance + balanceChange
+        });
+      }
+
+      // If it was a loan payment, decrement remainingAmount again
+      if (transaction.loanId) {
+        try {
+          const loanDocRef = doc(db, `users/${user.uid}/loans`, transaction.loanId);
+          const loanSnapshot = await getDocs(collection(db, `users/${user.uid}/loans`));
+          const loanDoc = loanSnapshot.docs.find(d => d.id === transaction.loanId);
+          if (loanDoc) {
+            const loanData = loanDoc.data();
+            const newRemainingAmount = Math.max(0, loanData.remainingAmount - transaction.amount);
+            await updateDoc(loanDocRef, {
+              remainingAmount: newRemainingAmount,
+              status: newRemainingAmount > 0 ? 'active' : 'paid'
+            });
+          }
+        } catch (loanError) {
+          console.error('Error re-applying loan balance on undo:', loanError);
+        }
+      }
+
+      await loadUserData(user.uid);
+    } catch (error) {
+      console.error('Error restoring transaction:', error);
+      showNotification('Could not restore transaction: ' + error.message, 'error');
+    }
+  };
+
+  // Soft-delete with a 5-second Undo snackbar. The transaction is removed from
+  // Firestore right away so the UI matches reality; Undo re-creates it.
+  const handleSoftDeleteWithUndo = async (transaction) => {
+    if (!transaction) return;
+
+    // If a previous undo is still pending for a different transaction, finalise it now.
+    if (undoTimeoutRef.current) {
+      clearTimeout(undoTimeoutRef.current);
+      undoTimeoutRef.current = null;
+    }
+
+    const snapshot = { ...transaction };
+    const ok = await performTransactionDelete(transaction, { silent: true });
+    if (!ok) return;
+
+    setPendingUndo({ transaction: snapshot });
+  };
+
+  const handleUndoDelete = async () => {
+    if (!pendingUndo) return;
+    const tx = pendingUndo.transaction;
+    setPendingUndo(null);
+    if (undoTimeoutRef.current) {
+      clearTimeout(undoTimeoutRef.current);
+      undoTimeoutRef.current = null;
+    }
+    await restoreTransaction(tx);
+    showNotification('Transaction restored', 'success');
+  };
+
+  const handleUndoTimeout = () => {
+    setPendingUndo(null);
+    showNotification('Transaction deleted', 'success');
+  };
+
+  // Edit triggered from the printer modal — reuse existing edit flow.
+  const handleEditFromModal = (transaction) => {
+    if (!transaction) return;
+    setEditingTransaction(transaction);
+    setTransactionForm({
+      type: transaction.type,
+      amount: transaction.amount.toString(),
+      description: transaction.description,
+      category: transaction.category || '',
+      incomeSource: transaction.incomeSource || '',
+      account: transaction.account,
+      date: transaction.date
+    });
+    setShowTransactionForm(true);
+  };
+
+  // Backwards-compat: a few callers might still reference the old name.
   const handleDeleteTransaction = async (transaction) => {
     if (!user) {
       showNotification('Please log in to delete a transaction', 'error');
@@ -1594,11 +1760,26 @@ Provide 3 specific ways to reduce spending and improve savings rate. Keep the ad
                 <button
                   onClick={() => setDarkMode(!darkMode)}
                   className="p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  title={darkMode ? 'Light mode' : 'Dark mode'}
                 >
                   {darkMode ? (
                     <Sun className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600 dark:text-gray-400" />
                   ) : (
                     <Moon className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                  )}
+                </button>
+
+                {/* Receipt SFX mute toggle */}
+                <button
+                  onClick={() => sfx.toggleMuted()}
+                  className="p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  title={sfx.muted ? 'Unmute receipt sounds' : 'Mute receipt sounds'}
+                  aria-pressed={sfx.muted}
+                >
+                  {sfx.muted ? (
+                    <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500 dark:text-gray-400" />
+                  ) : (
+                    <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600 dark:text-gray-300" />
                   )}
                 </button>
 
@@ -2005,60 +2186,21 @@ Provide 3 specific ways to reduce spending and improve savings rate. Keep the ad
                     </p>
                   </div>
 
-                  {/* Transaction List with Scroll */}
+                  {/* Transaction List with Scroll. Tap a row to open the printer
+                      modal; from there the printed receipt can be torn off,
+                      shared, edited, or long-press-dragged into the dustbin. */}
                   <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
                     {transactionsWithBalance.map((t) => {
                       const account = accounts.find(acc => acc.id === t.account);
                       return (
-                        <div key={t.id} className="flex flex-col sm:flex-row sm:justify-between sm:items-center p-3 sm:p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors gap-2 sm:gap-0">
-                          <div className="flex-1">
-                            <p className="font-medium text-gray-900 dark:text-white">{t.description}</p>
-                            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
-                              {new Date(t.date).toLocaleDateString()} • {t.type === 'expense' ? getCategoryIcon(t.category) + ' ' : ''}{t.category || t.incomeSource}
-                              <span className="hidden sm:inline">{account && ` • ${account.name}`}</span>
-                            </p>
-                          </div>
-                          <div className="flex items-center justify-between sm:justify-end space-x-3 sm:space-x-4">
-                            <span className={`font-bold ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                              {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
-                            </span>
-                            {/* Balance Column */}
-                            <div className="text-right min-w-[100px] sm:min-w-[120px] border-l border-gray-300 dark:border-gray-600 pl-2 sm:pl-3">
-                              <p className="text-xs text-gray-500 dark:text-gray-400">Bal. After</p>
-                              <p className={`font-bold text-sm ${t.balanceAfter >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                {formatCurrency(t.balanceAfter)}
-                              </p>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <button
-                                onClick={() => {
-                                  setEditingTransaction(t);
-                                  setTransactionForm({
-                                    type: t.type,
-                                    amount: t.amount.toString(),
-                                    description: t.description,
-                                    category: t.category || '',
-                                    incomeSource: t.incomeSource || '',
-                                    account: t.account,
-                                    date: t.date
-                                  });
-                                  setShowTransactionForm(true);
-                                }}
-                                className="text-blue-500 hover:text-blue-700 p-2 sm:p-1 touch-manipulation"
-                                title="Edit transaction"
-                              >
-                                <Edit2 className="w-5 h-5 sm:w-4 sm:h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteTransaction(t)}
-                                className="text-red-500 hover:text-red-700 p-2 sm:p-1 touch-manipulation"
-                                title="Delete transaction"
-                              >
-                                <Trash2 className="w-5 h-5 sm:w-4 sm:h-4" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
+                        <TransactionRow
+                          key={t.id}
+                          transaction={t}
+                          accountName={account ? account.name : ''}
+                          formatCurrency={formatCurrency}
+                          getCategoryIcon={getCategoryIcon}
+                          onOpen={(tx) => setViewingTransaction(tx)}
+                        />
                       );
                     })}
                   </div>
@@ -2909,6 +3051,33 @@ Provide 3 specific ways to reduce spending and improve savings rate. Keep the ad
         onClose={() => setShowConverter(false)}
         darkMode={darkMode}
         baseCurrency={baseCurrency}
+      />
+
+      {/* Printer / Receipt modal (tap a transaction row) */}
+      {viewingTransaction && (() => {
+        const acc = accounts.find((a) => a.id === viewingTransaction.account);
+        return (
+          <PrinterReceiptModal
+            transaction={viewingTransaction}
+            accountName={acc ? acc.name : ''}
+            currency={currency}
+            balanceAfter={viewingTransaction.balanceAfter}
+            onClose={() => setViewingTransaction(null)}
+            onEdit={handleEditFromModal}
+            onDelete={handleSoftDeleteWithUndo}
+            sfx={sfx}
+          />
+        );
+      })()}
+
+      {/* Undo snackbar after a soft-delete */}
+      <UndoSnackbar
+        open={!!pendingUndo}
+        message="Transaction deleted"
+        duration={5000}
+        onUndo={handleUndoDelete}
+        onTimeout={handleUndoTimeout}
+        onClose={() => { /* state already cleared by undo/timeout */ }}
       />
     </div>
 

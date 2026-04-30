@@ -165,3 +165,90 @@ html, body {
   outline: 2px solid #8B5CF6;
   outline-offset: 2px;
 }
+
+/* ---------- Receipt / Printer animation utilities ---------- */
+
+@keyframes printer-drop {
+  0% { transform: translateY(-30px) scale(0.96); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+.animate-printer-drop { animation: printer-drop 320ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+@keyframes paper-roll {
+  0% { max-height: 0; }
+  100% { max-height: 800px; }
+}
+.animate-paper-roll {
+  animation: paper-roll 1.6s ease-out both;
+}
+
+@keyframes line-print {
+  0% { opacity: 0; transform: translateY(-4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.animate-line-print { animation: line-print 220ms ease-out both; }
+
+/* Scissor that travels across the top of the receipt during the tear */
+@keyframes scissor-cut {
+  0%   { left: -10%;  transform: rotate(-12deg); }
+  20%  {                transform: rotate(12deg); }
+  40%  {                transform: rotate(-12deg); }
+  60%  {                transform: rotate(12deg); }
+  80%  {                transform: rotate(-12deg); }
+  100% { left: 102%; transform: rotate(0deg); }
+}
+.animate-scissor-cut {
+  animation: scissor-cut 750ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/* Tear line growing from left to right behind the scissor */
+@keyframes tear-line {
+  0%   { width: 0; }
+  100% { width: 100%; }
+}
+.animate-tear-line {
+  animation: tear-line 750ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes receipt-fall {
+  0%   { transform: translateY(0) rotate(0deg); opacity: 1; }
+  15%  { transform: translateY(8px) rotate(-1.5deg); opacity: 1; }
+  100% { transform: translateY(520px) rotate(10deg) scale(0.82); opacity: 0; }
+}
+.animate-receipt-fall { animation: receipt-fall 750ms cubic-bezier(0.5, 0, 0.75, 0) both; }
+
+@keyframes receipt-crush {
+  0%   { transform: scale(1) rotate(0deg);    opacity: 1; }
+  40%  { transform: scale(0.7) rotate(-8deg); opacity: 0.9; }
+  100% { transform: scale(0.25) rotate(20deg); opacity: 0; }
+}
+.animate-receipt-crush { animation: receipt-crush 420ms cubic-bezier(0.4, 0, 0.2, 1) both; }
+
+@keyframes snackbar-in {
+  0% { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.animate-snackbar-in { animation: snackbar-in 220ms ease-out both; }
+
+@keyframes paper-bit {
+  0% { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; }
+  100% {
+    transform: translate(var(--bit-dx, 0), var(--bit-dy, 0)) rotate(var(--bit-rot, 0deg)) scale(0.4);
+    opacity: 0;
+  }
+}
+.animate-paper-bit { animation: paper-bit 700ms cubic-bezier(0.4, 0, 0.2, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-printer-drop,
+  .animate-paper-roll,
+  .animate-line-print,
+  .animate-scissor-cut,
+  .animate-tear-line,
+  .animate-receipt-fall,
+  .animate-receipt-crush,
+  .animate-snackbar-in,
+  .animate-paper-bit {
+    animation-duration: 1ms !important;
+  }
+}
