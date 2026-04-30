@@ -500,33 +500,56 @@ function App() {
     }
   };
 
-  // Google Sign-in handler
+  // Google Sign-in handler. The native Capacitor plugin only works inside the
+  // Android/iOS shell — on the web it has no host to talk to and silently
+  // fails. So we branch on platform: native uses the plugin + signInWithCredential,
+  // web uses Firebase's signInWithPopup.
   const handleGoogleSignIn = async () => {
+    if (!auth) {
+      showNotification('Auth not initialized — check your Firebase .env config', 'error');
+      return;
+    }
     setLoading(true);
     try {
-      // 1. Trigger the native Android Google selection prompt
-      const nativeGoogleUser = await GoogleAuth.signIn();
-
-      // 2. Pass that credential into Firebase
-      const credential = GoogleAuthProvider.credential(nativeGoogleUser.authentication.idToken);
-      const result = await signInWithCredential(auth, credential);
-      const user = result.user;
-
-      // Check if this is a new user and create initial data if needed
-      const accountsSnapshot = await getDocs(collection(db, `users/${user.uid}/accounts`));
-      if (accountsSnapshot.empty) {
-        // Create a default account for new Google users
-        await addDoc(collection(db, `users/${user.uid}/accounts`), {
-          name: 'Main Account',
-          type: 'checking',
-          balance: 0,
-          createdAt: serverTimestamp()
-        });
+      let signedInUser;
+      if (Capacitor.isNativePlatform()) {
+        // Native: open the OS Google account picker, then exchange for a Firebase credential.
+        const nativeGoogleUser = await GoogleAuth.signIn();
+        const credential = GoogleAuthProvider.credential(nativeGoogleUser.authentication.idToken);
+        const result = await signInWithCredential(auth, credential);
+        signedInUser = result.user;
+      } else {
+        // Web: standard Firebase popup flow.
+        const result = await signInWithPopup(auth, googleProvider);
+        signedInUser = result.user;
       }
 
-      showNotification(`Welcome ${user.displayName || user.email}!`, 'success');
+      // Check if this is a new user and create initial data if needed
+      if (db) {
+        const accountsSnapshot = await getDocs(collection(db, `users/${signedInUser.uid}/accounts`));
+        if (accountsSnapshot.empty) {
+          await addDoc(collection(db, `users/${signedInUser.uid}/accounts`), {
+            name: 'Main Account',
+            type: 'checking',
+            balance: 0,
+            createdAt: serverTimestamp()
+          });
+        }
+      }
+
+      showNotification(`Welcome ${signedInUser.displayName || signedInUser.email}!`, 'success');
     } catch (error) {
-      showNotification('Error signing in with Google: ' + error.message, 'error');
+      console.error('Google sign-in failed:', error);
+      // Surface the most useful info we can to the user
+      let msg = error.message || 'Unknown error';
+      if (error.code === 'auth/popup-blocked') {
+        msg = 'Popup was blocked by the browser. Please allow popups for this site and try again.';
+      } else if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
+        msg = 'Sign-in was cancelled.';
+      } else if (error.code === 'auth/unauthorized-domain') {
+        msg = 'This domain is not authorized for Google sign-in. Add it under Firebase Auth → Settings → Authorized domains.';
+      }
+      showNotification('Error signing in with Google: ' + msg, 'error');
     } finally {
       setLoading(false);
     }
