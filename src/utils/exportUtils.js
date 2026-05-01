@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import Papa from 'papaparse';
 import { formatCurrency, formatCurrencyForPDF } from './currency';
 import { formatDate } from './dateHelpers';
+import { saveBlobFile } from './fileExport';
 
 /**
  * Export Utilities
@@ -16,7 +17,7 @@ import { formatDate } from './dateHelpers';
  * @param {string} dateRange - Date range string
  * @param {string} currency - Currency code
  */
-export const generatePDF = (transactions, summary, dateRange, currency = 'USD') => {
+export const generatePDF = async (transactions, summary, dateRange, currency = 'USD') => {
     const doc = new jsPDF();
 
     // Header
@@ -112,9 +113,9 @@ export const generatePDF = (transactions, summary, dateRange, currency = 'USD') 
         );
     }
 
-    // Save
     const filename = `pocket-pulse-statement-${new Date().toISOString().split('T')[0]}.pdf`;
-    doc.save(filename);
+    const blob = doc.output('blob');
+    return saveBlobFile(blob, filename, 'application/pdf');
 };
 
 /**
@@ -122,7 +123,7 @@ export const generatePDF = (transactions, summary, dateRange, currency = 'USD') 
  * @param {Array} transactions - Transactions to export
  * @param {string} currency - Currency code
  */
-export const generateCSV = (transactions, currency = 'USD') => {
+export const generateCSV = async (transactions, currency = 'USD') => {
     // Prepare data
     const csvData = transactions.map(t => ({
         Date: t.date,
@@ -138,14 +139,9 @@ export const generateCSV = (transactions, currency = 'USD') => {
     // Convert to CSV
     const csv = Papa.unparse(csvData);
 
-    // Create blob and download
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `pocket-pulse-transactions-${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    const filename = `pocket-pulse-transactions-${new Date().toISOString().split('T')[0]}.csv`;
+    return saveBlobFile(blob, filename, 'text/csv;charset=utf-8;');
 };
 
 /**

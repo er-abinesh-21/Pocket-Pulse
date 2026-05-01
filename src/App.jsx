@@ -239,10 +239,9 @@ function App() {
     pause: pauseRecurring,
     resume: resumeRecurring,
     remove: removeRecurring
-  } = useRecurringTransactions(user?.uid, () => {
-    // Callback when auto-transaction is created
+  } = useRecurringTransactions(user?.uid, useCallback(() => {
     loadUserData(user?.uid);
-  });
+  }, [user?.uid]));
 
   // Initialize auth listener
   useEffect(() => {

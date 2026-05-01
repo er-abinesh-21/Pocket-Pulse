@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import { formatCurrencyForPDF } from './currency';
 import { formatDate } from './dateHelpers';
+import { saveBlobFile } from './fileExport';
 
 /**
  * Thermal Receipt PDF Generator
@@ -182,10 +183,10 @@ export const buildThermalReceiptDoc = (transaction, options = {}) => {
 /**
  * Trigger a browser download of the thermal receipt PDF.
  */
-export const downloadThermalReceipt = (transaction, options = {}) => {
+export const downloadThermalReceipt = async (transaction, options = {}) => {
     const { doc, filename } = buildThermalReceiptDoc(transaction, options);
-    doc.save(filename);
-    return filename;
+    const blob = doc.output('blob');
+    return saveBlobFile(blob, filename, 'application/pdf');
 };
 
 /**

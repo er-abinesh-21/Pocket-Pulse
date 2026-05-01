@@ -5,6 +5,7 @@ import {
     addDoc,
     updateDoc,
     deleteDoc,
+    getDoc,
     getDocs,
     query,
     orderBy,
@@ -119,6 +120,22 @@ export const createTransaction = async (userId, transactionData) => {
         createdAt: serverTimestamp()
     });
     return { id: docRef.id, ...transactionData };
+};
+
+export const createTransactionOnce = async (userId, transactionId, transactionData) => {
+    const docRef = getUserDoc(userId, 'transactions', transactionId);
+    const snapshot = await getDoc(docRef);
+
+    if (snapshot.exists()) {
+        return { id: transactionId, ...snapshot.data(), alreadyExists: true };
+    }
+
+    await setDoc(docRef, {
+        ...transactionData,
+        createdAt: serverTimestamp()
+    });
+
+    return { id: transactionId, ...transactionData, alreadyExists: false };
 };
 
 /**

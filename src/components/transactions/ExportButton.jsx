@@ -24,7 +24,7 @@ export const ExportButton = ({ transactions, accounts, currency = 'USD', dateRan
             const summary = calculateSummary(transactionsWithAccounts);
 
             // Generate PDF
-            generatePDF(transactionsWithAccounts, summary, dateRange, currency);
+            await generatePDF(transactionsWithAccounts, summary, dateRange, currency);
 
             setShowMenu(false);
         } catch (error) {
@@ -45,7 +45,7 @@ export const ExportButton = ({ transactions, accounts, currency = 'USD', dateRan
             }));
 
             // Generate CSV (transactions already have balanceAfter from App.jsx)
-            generateCSV(transactionsWithAccounts, currency);
+            await generateCSV(transactionsWithAccounts, currency);
 
             setShowMenu(false);
         } catch (error) {

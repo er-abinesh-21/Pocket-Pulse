@@ -5,6 +5,7 @@ import {
     downloadThermalReceipt,
     getThermalReceiptBlob
 } from '../../utils/thermalReceiptPdf';
+import { shareBlobFile } from '../../utils/fileExport';
 import { useLongPressDrag } from '../../hooks/useLongPressDrag';
 import { DustbinDropZone } from './DustbinDropZone';
 
@@ -325,7 +326,9 @@ export const PrinterReceiptModal = ({
             setCutting(false);
             setTorn(true);
             try {
-                downloadThermalReceipt(transaction, { accountName, currency, balanceAfter });
+                downloadThermalReceipt(transaction, { accountName, currency, balanceAfter }).catch((err) => {
+                    console.error('Receipt download failed:', err);
+                });
             } catch (err) {
                 console.error('Receipt download failed:', err);
             }
@@ -344,35 +347,14 @@ export const PrinterReceiptModal = ({
                 currency,
                 balanceAfter
             });
-            const file =
-                typeof File !== 'undefined' ? new File([blob], filename, { type: 'application/pdf' }) : null;
-
-            if (
-                file &&
-                typeof navigator !== 'undefined' &&
-                navigator.canShare &&
-                navigator.canShare({ files: [file] })
-            ) {
-                await navigator.share({
-                    files: [file],
-                    title: 'Pocket Pulse receipt',
-                    text: transaction.description || 'Receipt'
-                });
-                setShareStatus('shared');
-                return;
-            }
-
-            if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                const summary = `${transaction.description || 'Transaction'} — ${transaction.type === 'income' ? '+' : '-'
-                    }${Math.abs(transaction.amount)} on ${transaction.date}`;
-                await navigator.clipboard.writeText(summary);
-                setShareStatus('copied');
-                setTimeout(() => setShareStatus(''), 1800);
-                return;
-            }
-
-            setShareStatus('failed');
-            setTimeout(() => setShareStatus(''), 1800);
+            await shareBlobFile(
+                blob,
+                filename,
+                'application/pdf',
+                'Pocket Pulse receipt',
+                transaction.description || 'Receipt'
+            );
+            setShareStatus('shared');
         } catch (err) {
             console.error('Share failed:', err);
             setShareStatus('failed');

@@ -4,7 +4,7 @@ import {
     updateRecurringTransaction as updateRecurring,
     deleteRecurringTransaction as deleteRecurring
 } from './firestore.service';
-import { createTransaction } from './firestore.service';
+import { createTransactionOnce } from './firestore.service';
 import { calculateNextOccurrence } from '../utils/dateHelpers';
 
 /**
@@ -43,8 +43,16 @@ export const processDueRecurringTransactions = async (userId, onTransactionCreat
                     date: recurring.nextOccurrence
                 };
 
-                await createTransaction(userId, transactionData);
-                createdCount++;
+                const transactionId = `recurring_${recurring.id}_${recurring.nextOccurrence}`;
+                const createdTransaction = await createTransactionOnce(userId, transactionId, {
+                    ...transactionData,
+                    recurringId: recurring.id,
+                    recurringOccurrenceDate: recurring.nextOccurrence
+                });
+
+                if (!createdTransaction.alreadyExists) {
+                    createdCount++;
+                }
 
                 // Calculate next occurrence
                 const nextOccurrence = calculateNextOccurrence(
@@ -59,7 +67,7 @@ export const processDueRecurringTransactions = async (userId, onTransactionCreat
                 });
 
                 // Notify callback
-                if (onTransactionCreated) {
+                if (onTransactionCreated && !createdTransaction.alreadyExists) {
                     onTransactionCreated(transactionData);
                 }
             }
