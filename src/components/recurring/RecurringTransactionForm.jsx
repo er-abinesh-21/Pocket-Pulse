@@ -58,17 +58,13 @@ export const RecurringTransactionForm = ({
             return;
         }
 
-        // Calculate next occurrence
-        const nextOccurrence = calculateNextOccurrence(
-            new Date(formData.startDate),
-            formData.frequency
-        );
-
-        // Submit with next occurrence
+        // Submit with startDate as the first occurrence.
+        // The processor will create the transaction when nextOccurrence <= today,
+        // then advance nextOccurrence to the following period.
         onSubmit({
             ...formData,
             amount: parseFloat(formData.amount),
-            nextOccurrence: nextOccurrence.toISOString().split('T')[0]
+            nextOccurrence: formData.startDate
         });
 
         onClose();

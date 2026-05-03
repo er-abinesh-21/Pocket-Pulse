@@ -236,6 +236,7 @@ function App() {
     recurringTransactions,
     loading: recurringLoading,
     refresh: refreshRecurringTransactions,
+    processDueTransactions,
     pause: pauseRecurring,
     resume: resumeRecurring,
     remove: removeRecurring
@@ -1206,7 +1207,9 @@ function App() {
     setLoading(true);
     try {
       await createRecurringTransaction(user.uid, recurringData);
-      await refreshRecurringTransactions(); // Refresh the list
+      await refreshRecurringTransactions();
+      // Process immediately so today's transaction is created right away
+      await processDueTransactions();
       showNotification('Recurring transaction created successfully!', 'success');
       setShowRecurringForm(false);
       setEditingRecurring(null);

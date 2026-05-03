@@ -2,9 +2,11 @@ import {
     getRecurringTransactions,
     createRecurringTransaction as createRecurring,
     updateRecurringTransaction as updateRecurring,
-    deleteRecurringTransaction as deleteRecurring
+    deleteRecurringTransaction as deleteRecurring,
+    createTransactionOnce,
+    getAccounts,
+    updateAccount
 } from './firestore.service';
-import { createTransactionOnce } from './firestore.service';
 import { calculateNextOccurrence } from '../utils/dateHelpers';
 
 /**
@@ -52,6 +54,18 @@ export const processDueRecurringTransactions = async (userId, onTransactionCreat
 
                 if (!createdTransaction.alreadyExists) {
                     createdCount++;
+
+                    // Update account balance
+                    const accounts = await getAccounts(userId);
+                    const account = accounts.find(a => a.id === recurring.account);
+                    if (account) {
+                        const balanceChange = recurring.type === 'income'
+                            ? recurring.amount
+                            : -recurring.amount;
+                        await updateAccount(userId, account.id, {
+                            balance: account.balance + balanceChange
+                        });
+                    }
                 }
 
                 // Calculate next occurrence
