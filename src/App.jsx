@@ -219,6 +219,10 @@ function App() {
   const undoTimeoutRef = useRef(null);
   const sfx = useReceiptSfx();
 
+  // Bulk selection state
+  const [bulkSelectMode, setBulkSelectMode] = useState(false);
+  const [selectedTransactionIds, setSelectedTransactionIds] = useState(new Set());
+
 
   // Currency configuration
   const currencies = {
@@ -948,6 +952,71 @@ function App() {
   const handleUndoTimeout = () => {
     setPendingUndo(null);
     showNotification('Transaction deleted', 'success');
+  };
+
+  // Bulk select helpers
+  const toggleSelectTransaction = (id) => {
+    setSelectedTransactionIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedTransactionIds.size === transactionsWithBalance.length) {
+      setSelectedTransactionIds(new Set());
+    } else {
+      setSelectedTransactionIds(new Set(transactionsWithBalance.map(t => t.id)));
+    }
+  };
+
+  const exitBulkSelect = () => {
+    setBulkSelectMode(false);
+    setSelectedTransactionIds(new Set());
+  };
+
+  // Bulk delete selected transactions
+  const handleBulkDelete = async () => {
+    if (!user || !db || selectedTransactionIds.size === 0) return;
+
+    const count = selectedTransactionIds.size;
+    if (!window.confirm(`Delete ${count} selected transaction${count > 1 ? 's' : ''}? This cannot be undone.`)) return;
+
+    setLoading(true);
+    try {
+      // Group selected transactions by account to batch balance updates
+      const balanceChanges = {};
+      const selected = transactionsWithBalance.filter(t => selectedTransactionIds.has(t.id));
+
+      for (const t of selected) {
+        // Delete the transaction doc
+        await deleteDoc(doc(db, `users/${user.uid}/transactions`, t.id));
+
+        // Accumulate balance reversal per account
+        if (!balanceChanges[t.account]) balanceChanges[t.account] = 0;
+        balanceChanges[t.account] += t.type === 'income' ? -t.amount : t.amount;
+      }
+
+      // Apply accumulated balance changes per account
+      for (const [accountId, change] of Object.entries(balanceChanges)) {
+        const account = accounts.find(a => a.id === accountId);
+        if (account) {
+          await updateDoc(doc(db, `users/${user.uid}/accounts`, accountId), {
+            balance: account.balance + change
+          });
+        }
+      }
+
+      await loadUserData(user.uid);
+      exitBulkSelect();
+      showNotification(`${count} transaction${count > 1 ? 's' : ''} deleted successfully!`, 'success');
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      showNotification('Error deleting transactions: ' + error.message, 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Edit triggered from the printer modal — reuse existing edit flow.
@@ -2201,14 +2270,32 @@ Provide 3 specific ways to reduce spending and improve savings rate. Keep the ad
                 </div>
               ) : (
                 <div>
-                  {/* Transaction Summary */}
-                  <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                  {/* Transaction Summary + Bulk Select */}
+                  <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg flex items-center justify-between flex-wrap gap-2">
                     <p className="text-sm text-gray-600 dark:text-gray-400">
                       Showing: <span className="font-semibold">{filteredTransactions.length}</span> of <span className="font-semibold">{transactions.length}</span> transactions
-                      {filteredTransactions.length > 20 && (
-                        <span className="ml-2 text-xs">(Scroll to see all)</span>
-                      )}
                     </p>
+                    <div className="flex items-center gap-2">
+                      {bulkSelectMode ? (
+                        <>
+                          <button onClick={toggleSelectAll} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/60 transition-colors">
+                            {selectedTransactionIds.size === transactionsWithBalance.length ? 'Deselect All' : 'Select All'}
+                          </button>
+                          {selectedTransactionIds.size > 0 && (
+                            <button onClick={handleBulkDelete} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors">
+                              Delete ({selectedTransactionIds.size})
+                            </button>
+                          )}
+                          <button onClick={exitBulkSelect} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors">
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button onClick={() => setBulkSelectMode(true)} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors">
+                          Select
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Transaction List with Scroll. Tap a row to open the printer
@@ -2225,6 +2312,9 @@ Provide 3 specific ways to reduce spending and improve savings rate. Keep the ad
                           formatCurrency={formatCurrency}
                           getCategoryIcon={getCategoryIcon}
                           onOpen={(tx) => setViewingTransaction(tx)}
+                          selectable={bulkSelectMode}
+                          selected={selectedTransactionIds.has(t.id)}
+                          onSelect={toggleSelectTransaction}
                         />
                       );
                     })}
